@@ -1,0 +1,70 @@
+TAP version 13
+# Subtest: V04 fixed MWF extension + real pi loader + MCP tools + bootstrap/resume
+ok 1 - V04 fixed MWF extension + real pi loader + MCP tools + bootstrap/resume
+  ---
+  duration_ms: 3226.009416
+  type: 'test'
+  ...
+# Subtest: V04 upstream real SIGKILL writer releases lock and recovers durable receipt
+ok 2 - V04 upstream real SIGKILL writer releases lock and recovers durable receipt
+  ---
+  duration_ms: 781.834071
+  type: 'test'
+  ...
+# Subtest: V04 successful run + failed critical save pause lane; restart retries only save
+ok 3 - V04 successful run + failed critical save pause lane; restart retries only save
+  ---
+  duration_ms: 1429.023724
+  type: 'test'
+  ...
+# Subtest: V04 bootstrap, recall, idempotent saves and conflicting request IDs
+ok 4 - V04 bootstrap, recall, idempotent saves and conflicting request IDs
+  ---
+  duration_ms: 309.9937
+  type: 'test'
+  ...
+# Subtest: V04 interrupted transactions recover without duplicate records
+ok 5 - V04 interrupted transactions recover without duplicate records
+  ---
+  duration_ms: 941.663681
+  type: 'test'
+  ...
+# Subtest: V04 recovery preserves an external edit and its pending journal
+ok 6 - V04 recovery preserves an external edit and its pending journal
+  ---
+  duration_ms: 215.073884
+  type: 'test'
+  ...
+# Subtest: V04 real concurrent CLI writers serialize and deduplicate
+ok 7 - V04 real concurrent CLI writers serialize and deduplicate
+  ---
+  duration_ms: 871.490405
+  type: 'test'
+  ...
+# Subtest: V04 native update has no caller revision guard (documented capability gap)
+ok 8 - V04 native update has no caller revision guard (documented capability gap)
+  ---
+  duration_ms: 360.050897
+  type: 'test'
+  ...
+# Subtest: V04 real worktrees inherit tracked memory but do not share subsequent writes
+ok 9 - V04 real worktrees inherit tracked memory but do not share subsequent writes
+  ---
+  duration_ms: 563.593235
+  type: 'test'
+  ...
+# Subtest: V04 revision adapter uses native lock and transaction to preserve external corrections
+ok 10 - V04 revision adapter uses native lock and transaction to preserve external corrections
+  ---
+  duration_ms: 283.323985
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 10311.089724

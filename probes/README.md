@@ -36,3 +36,19 @@ node --test probes/v03.test.mjs
 `fixtures/pi-0.84.1-session.jsonl` 由真实旧版 SessionManager 生成；测试只重定位 fixture 的 cwd，其他历史条目保持不变。重新生成时，在 `probes/.cache/pi-previous` 安装精确版本 `@earendil-works/pi-coding-agent@0.84.1`（`--ignore-scripts`），核对 metadata 中的包完整性值，再运行 `node probes/generate-previous-session.mjs`。
 
 真实模型验证需在本地设置 `PARALLEL_PI_PROVIDER`、`PARALLEL_PI_MODEL` 和该 provider 的原生凭据环境变量，然后执行 `node --test probes/v01-live.test.mjs`。它会执行 4 次真实提示（文字、工具、图片、恢复），可能消耗额度；没有配置会明确失败，不会把跳过当通过。测试使用临时 HOME 与 agent 目录，不读取其他 harness 的凭据。不要把密钥写入命令记录或仓库。
+
+## V04 与全套验证
+
+```sh
+npm ci --ignore-scripts
+npm run setup:probes
+npm run probe
+```
+
+也可用 `npm run probe:v01` 到 `npm run probe:v04` 分轮运行。实际验证运行时固定为 Node.js 26.8.2；macOS 使用相同命令，须记录真实结果。
+
+MWF 从 `versions.json` 的固定提交构建到忽略的 `.cache/mwf-source`，不会安装全局 runtime 或初始化当前项目记忆。MCP adapter 由根 package-lock 固定；探针仅在临时项目调用 setup。
+
+全套入口排除真实 provider 测试；真实调用用 `npm run probe:live` 单独运行。`run.mjs` 将 TAP 和环境/源码哈希写入 `results/local/<platform>.*`。源码在运行期间改变会使该份证据失效；只有检查过的脱敏结果才复制到跟踪区。
+
+修订适配验证依赖固定 MWF 内部 API；它不是对公开 CLI 已支持 expected_revision 的承诺。详见报告的 V04 及剩余门槛。

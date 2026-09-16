@@ -20,7 +20,7 @@ function fixture(t) {
   writeFileSync(join(a, 'tracked'), 'fixture'); git('add', 'tracked');
   git('-c', 'user.name=Probe', '-c', 'user.email=probe@example.invalid', 'commit', '-m', 'fixture');
   git('worktree', 'add', '-b', 'other', b);
-  mkdirSync(join(b, '.pi')); 
+  mkdirSync(join(b, '.pi'));
   writeFileSync(join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'parallel-probe', defaultModel: 'probe-a' }));
   writeFileSync(join(a, '.pi/settings.json'), JSON.stringify({ defaultModel: 'probe-b' }));
   return { dir, agent, a, b };

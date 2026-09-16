@@ -1,0 +1,20 @@
+{
+  "name": "parallel-pi-probes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup:probes": "node probes/setup-pi.mjs && node probes/setup-mwf.mjs",
+    "probe": "node probes/run.mjs",
+    "probe:v01": "node --test probes/v01.test.mjs probes/v01-upgrade.test.mjs",
+    "probe:v02": "node --test probes/v02.test.mjs",
+    "probe:v03": "node --test probes/v03.test.mjs",
+    "probe:v04": "node --test probes/v04.test.mjs probes/v04-adapter.test.mjs probes/v04-jobs.test.mjs",
+    "probe:live": "node --test probes/v01-live.test.mjs"
+  },
+  "engines": {
+    "node": "26.8.2"
+  },
+  "devDependencies": {
+    "pi-mcp-adapter": "2.32.1"
+  }
+}
