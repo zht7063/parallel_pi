@@ -14,3 +14,11 @@ node --test probes/v01.test.mjs
 V01 使用真实 pi RPC、原生持久化、Bash 工具、扩展 UI 和上游 faux provider。它证明协议与执行链路，不证明真实 provider 的视觉理解或模型质量。结果见 [验证报告](../docs/validation.md)。
 
 `probes/.cache/`、`node_modules/` 和 `probes/results/local/` 为本地生成物，已忽略。可审查的脱敏验证记录放 `probes/results/`；用户凭据、会话原文和临时工作区不进入 Git。
+
+## V02
+
+```sh
+node --test probes/v02.test.mjs
+```
+
+`coordinator.mjs` 是 SQLite 持久队列实验，用真实 worktree 和 pi 进程验证崩溃窗口。它保守阻止未核验恢复，不提供生产级进程树监督。

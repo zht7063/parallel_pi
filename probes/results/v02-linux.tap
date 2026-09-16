@@ -1,0 +1,70 @@
+TAP version 13
+# Subtest: V02 real worktrees: serial per branch, parallel across branches, canonical aliases, idempotency
+ok 1 - V02 real worktrees: serial per branch, parallel across branches, canonical aliases, idempotency
+  ---
+  duration_ms: 3021.530001
+  type: 'test'
+  ...
+# Subtest: V02 stop pauses lane, keeps edits and queued work, then explicit resume
+ok 2 - V02 stop pauses lane, keeps edits and queued work, then explicit resume
+  ---
+  duration_ms: 2520.6078
+  type: 'test'
+  ...
+# Subtest: V02 changed worktree binding fails and pauses instead of running in another branch
+ok 3 - V02 changed worktree binding fails and pauses instead of running in another branch
+  ---
+  duration_ms: 257.201809
+  type: 'test'
+  ...
+# Subtest: V02 crash recovery: backend SIGKILL closes stdin and pi cleans tool
+ok 4 - V02 crash recovery: backend SIGKILL closes stdin and pi cleans tool
+  ---
+  duration_ms: 1267.158493
+  type: 'test'
+  ...
+# Subtest: V02 crash recovery: kernel SIGKILL leaves detached tool
+ok 5 - V02 crash recovery: kernel SIGKILL leaves detached tool
+  ---
+  duration_ms: 1423.957205
+  type: 'test'
+  ...
+# Subtest: V02 pending session creation blocks branch; restart requires reconciliation of real file
+ok 6 - V02 pending session creation blocks branch; restart requires reconciliation of real file
+  ---
+  duration_ms: 1284.03837
+  type: 'test'
+  ...
+# Subtest: V02 startup crash window: before-spawn is never automatically replayed
+ok 7 - V02 startup crash window: before-spawn is never automatically replayed
+  ---
+  duration_ms: 255.808802
+  type: 'test'
+  ...
+# Subtest: V02 startup crash window: after-spawn is never automatically replayed
+ok 8 - V02 startup crash window: after-spawn is never automatically replayed
+  ---
+  duration_ms: 1428.449468
+  type: 'test'
+  ...
+# Subtest: V02 startup crash window: after-acceptance is never automatically replayed
+ok 9 - V02 startup crash window: after-acceptance is never automatically replayed
+  ---
+  duration_ms: 1445.135699
+  type: 'test'
+  ...
+# Subtest: V02 unexpected kernel death holds lane recovering while detached tool remains
+ok 10 - V02 unexpected kernel death holds lane recovering while detached tool remains
+  ---
+  duration_ms: 1482.144277
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 14474.539915
