@@ -51,10 +51,13 @@ test('V02 real worktrees: serial per branch, parallel across branches, canonical
     assert.equal(coordinator.enqueue('a1', alias, 'probe-tool').id, 'a1');
     assert.throws(() => coordinator.enqueue('a1', a, 'different'), /Idempotency conflict/);
     assert.throws(() => new Coordinator(data), /Another backend/);
+    assert.throws(() => execFileSync(process.execPath, [`${root}probes/v02-worker.mjs`, data, a, 'instance-check'], { stdio: 'pipe', timeout: 5000 }), /Another backend/);
     coordinator.pump();
     assert.deepEqual([...coordinator.active.keys()], ['a1', 'b1']);
     assert.equal(coordinator.get('a2').state, 'queued');
-    await Promise.all([...coordinator.active.values()].map(e => e.done));
+    const running = [...coordinator.active.entries()];
+    await Promise.all(running.map(([, entry]) => entry.done));
+    for (const [id, entry] of running) assert.ok(JSON.stringify(entry.rpc.events.filter(e => e.type === 'tool_execution_end')).includes(id === 'a1' ? a : b), 'tool ran in bound worktree');
     for (const id of ['a1', 'b1']) assert.equal(coordinator.get(id).state, 'succeeded', coordinator.get(id).error);
     const a1 = coordinator.get('a1'), b1 = coordinator.get('b1');
     assert.ok(a1.started < b1.ended && b1.started < a1.ended, 'actual pi process lifetimes overlap');
@@ -223,5 +226,61 @@ test('V02 waiting for a question occupies capacity; ready branches receive fair 
     coordinator.pump();
     await Promise.all([...coordinator.active.values()].map(e => e.done));
     assert.equal(coordinator.get('a-backlog').state, 'succeeded');
+  } finally { await coordinator.close(); }
+});
+
+test('V02 fork file created before application commit remains a pending operation after restart', { timeout: 20000 }, async t => {
+  const { a, data, dir } = fixture(t);
+  const agent = join(dir, 'agent'); mkdirSync(agent);
+  let coordinator = new Coordinator(data);
+  const rpc = new Rpc(a, agent);
+  try {
+    await rpc.prompt('parent context'); await rpc.prompt('fork source');
+    const source = (await rpc.command('get_state')).sessionFile;
+    const selected = (await rpc.command('get_fork_messages')).messages.find(m => m.text === 'fork source');
+    coordinator.enqueue('pending-fork', a, 'must wait');
+    coordinator.beginOperation('fork-intent', coordinator.get('pending-fork').lane, 'fork-session', JSON.stringify({ source, entryId: selected.entryId }));
+    await rpc.command('fork', { entryId: selected.entryId });
+    const forkPath = (await rpc.command('get_state')).sessionFile;
+    await rpc.close();
+    await coordinator.close(); coordinator = new Coordinator(data);
+    const header = JSON.parse(readFileSync(forkPath, 'utf8').split('\n')[0]);
+    assert.equal(header.parentSession, source);
+    assert.equal(coordinator.db.prepare("SELECT state FROM operation WHERE id='fork-intent'").get().state, 'pending');
+    assert.equal(coordinator.lane('pending-fork').state, 'recovering');
+    coordinator.pump(); assert.equal(coordinator.active.size, 0);
+  } finally { await rpc.close(); await coordinator.close(); }
+});
+test('V02 worktree prepared before application commit is preserved and not recreated', async t => {
+  const { a, data, dir, git } = fixture(t);
+  let coordinator = new Coordinator(data);
+  try {
+    coordinator.enqueue('pending-worktree', a, 'must wait');
+    const target = join(dir, 'new-worktree');
+    coordinator.beginOperation('worktree-intent', coordinator.get('pending-worktree').lane, 'prepare-worktree', target);
+    git('worktree', 'add', '-b', 'prepared', target);
+    await coordinator.close(); coordinator = new Coordinator(data);
+    assert.equal(workspace(target).ref, 'refs/heads/prepared');
+    assert.equal(coordinator.lane('pending-worktree').state, 'recovering');
+    coordinator.pump(); assert.equal(coordinator.active.size, 0);
+    assert.throws(() => coordinator.beginOperation('duplicate', coordinator.get('pending-worktree').lane, 'prepare-worktree', target), /pending/);
+  } finally { await coordinator.close(); }
+});
+
+test('V02 stop while waiting cancels the correlated question and pauses queued work', { timeout: 20000 }, async t => {
+  const { a, data } = fixture(t);
+  const coordinator = new Coordinator(data);
+  try {
+    coordinator.enqueue('waiting-stop', a, 'probe-question-tool');
+    coordinator.enqueue('waiting-next', a, 'must stay queued');
+    coordinator.pump();
+    const entry = coordinator.active.get('waiting-stop');
+    await entry.rpc.wait(e => e.type === 'extension_ui_request' && e.method === 'input');
+    assert.equal(coordinator.get('waiting-stop').state, 'waiting');
+    await coordinator.stop('waiting-stop');
+    assert.equal(entry.rpc.questions.size, 0);
+    assert.equal(coordinator.get('waiting-stop').state, 'cancelled');
+    assert.equal(coordinator.lane('waiting-stop').state, 'paused');
+    coordinator.pump(); assert.equal(coordinator.get('waiting-next').state, 'queued');
   } finally { await coordinator.close(); }
 });

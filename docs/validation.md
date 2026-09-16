@@ -32,15 +32,15 @@
 
 ## V02 首轮：工作区、持久队列与进程故障
 
-命令：`node --test probes/v02.test.mjs`。Linux 11 项实验通过，记录见 `probes/results/v02-linux.tap`。
+命令：`node --test probes/v02.test.mjs`。Linux 14 项实验通过，记录见 `probes/results/v02-linux.tap`。
 
 - 真实 Git 仓库的两个 worktree 与真实 pi 进程：同分支串行、不同分支运行区间重叠；符号链接别名映射到相同 lane；重复请求返回原记录，内容变化报冲突。
-- SQLite 排他实例锁拒绝第二个协调器；队列状态和事件一起落盘。
+- SQLite 排他实例锁拒绝第二个协调器及真实第二后端进程；队列状态和事件一起落盘。
 - 等待真实扩展问题时继续占并发名额；正确回答后才继续。按 lane 最近获准执行次序选择，避免一个分支的积压占满其他就绪分支的机会。
-- 正常停止清理工具，保留 dirty 修改并暂停该列；排队项保留，明确恢复后才启动。
+- 正常停止清理工具，保留 dirty 修改并暂停该列；排队项保留，明确恢复后才启动。等待回答时先发 abort，再取消匹配的扩展 question ID，验证不会卡在扩展对话等待中。
 - 外部切换 Git 分支时启动前核验失败，暂停该列，不启动模型。
 - 真实 SIGKILL 覆盖启动意图后、spawn 后但 PID 未落盘、prompt 接受后三个窗口：重启标记 interrupted/recovering，不自动补发，不放行原队列。
-- 原生会话文件创建后、应用操作仍 pending 时重启：保留文件与操作意图，阻止该列继续，等待对账。
+- 原生会话创建、fork 文件落盘、Git worktree 创建后，应用操作仍 pending 时重启：保留产物与操作意图，阻止该列继续，等待对账；fork 文件保留真实 parentSession。
 - 只杀后端：此版本 pi 因 stdin EOF 清理活动 Bash。先冻结后端再强杀 pi：Bash 的独立进程组仍然存活；探针显式清理测试工具，未发生后续写入。
 - 协调器仍在运行时强杀 pi：不把进程退出当作收束证明，run 标 interrupted，lane 留 recovering，禁止直接 resume。
 

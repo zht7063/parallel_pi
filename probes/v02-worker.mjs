@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
-const [data, cwd] = process.argv.slice(2);
+const [data, cwd, mode] = process.argv.slice(2);
 const coordinator = new Coordinator(data);
+if (mode === 'instance-check') { await coordinator.close(); process.exit(0); }
 coordinator.enqueue('crash-active', cwd, 'probe-slow-tool');
 coordinator.enqueue('crash-queued', cwd, 'must not replay');
 coordinator.pump();

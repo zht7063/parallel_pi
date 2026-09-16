@@ -100,7 +100,11 @@ export class Coordinator {
       entry.rpc.changes.on('change', () => {
         const fresh = entry.rpc.events.slice(seen);
         seen = entry.rpc.events.length;
-        if (fresh.some(event => event.type === 'extension_ui_request' && ['input', 'select', 'confirm', 'editor'].includes(event.method))) this.transition(run.id, 'waiting');
+        if (fresh.some(event => event.type === 'extension_ui_request' && ['input', 'select', 'confirm', 'editor'].includes(event.method))) {
+          if (entry.cancelled) {
+            for (const id of entry.rpc.questions.keys()) entry.rpc.send({ type: 'extension_ui_response', id, cancelled: true });
+          } else this.transition(run.id, 'waiting');
+        }
       });
       const after = entry.rpc.events.length;
       await entry.rpc.command('prompt', { message: run.prompt });
@@ -128,7 +132,9 @@ export class Coordinator {
     active.cancelled = true;
     this.transition(id, 'stopping');
     await active.rpc.command('clear_queue');
-    await active.rpc.command('abort');
+    const aborted = active.rpc.command('abort');
+    for (const id of active.rpc.questions.keys()) active.rpc.send({ type: 'extension_ui_response', id, cancelled: true });
+    await aborted;
     await active.done;
   }
   resume(id) {

@@ -2,75 +2,93 @@ TAP version 13
 # Subtest: V02 real worktrees: serial per branch, parallel across branches, canonical aliases, idempotency
 ok 1 - V02 real worktrees: serial per branch, parallel across branches, canonical aliases, idempotency
   ---
-  duration_ms: 4171.30542
+  duration_ms: 3034.664768
   type: 'test'
   ...
 # Subtest: V02 stop pauses lane, keeps edits and queued work, then explicit resume
 ok 2 - V02 stop pauses lane, keeps edits and queued work, then explicit resume
   ---
-  duration_ms: 3077.566145
+  duration_ms: 2586.236378
   type: 'test'
   ...
 # Subtest: V02 changed worktree binding fails and pauses instead of running in another branch
 ok 3 - V02 changed worktree binding fails and pauses instead of running in another branch
   ---
-  duration_ms: 264.012037
+  duration_ms: 171.468843
   type: 'test'
   ...
 # Subtest: V02 crash recovery: backend SIGKILL closes stdin and pi cleans tool
 ok 4 - V02 crash recovery: backend SIGKILL closes stdin and pi cleans tool
   ---
-  duration_ms: 1601.935522
+  duration_ms: 1872.345486
   type: 'test'
   ...
 # Subtest: V02 crash recovery: kernel SIGKILL leaves detached tool
 ok 5 - V02 crash recovery: kernel SIGKILL leaves detached tool
   ---
-  duration_ms: 1683.333051
+  duration_ms: 1391.746042
   type: 'test'
   ...
 # Subtest: V02 pending session creation blocks branch; restart requires reconciliation of real file
 ok 6 - V02 pending session creation blocks branch; restart requires reconciliation of real file
   ---
-  duration_ms: 1321.641874
+  duration_ms: 1252.206439
   type: 'test'
   ...
 # Subtest: V02 startup crash window: before-spawn is never automatically replayed
 ok 7 - V02 startup crash window: before-spawn is never automatically replayed
   ---
-  duration_ms: 276.719343
+  duration_ms: 260.221617
   type: 'test'
   ...
 # Subtest: V02 startup crash window: after-spawn is never automatically replayed
 ok 8 - V02 startup crash window: after-spawn is never automatically replayed
   ---
-  duration_ms: 1387.801546
+  duration_ms: 1406.49928
   type: 'test'
   ...
 # Subtest: V02 startup crash window: after-acceptance is never automatically replayed
 ok 9 - V02 startup crash window: after-acceptance is never automatically replayed
   ---
-  duration_ms: 1393.061742
+  duration_ms: 1220.953813
   type: 'test'
   ...
 # Subtest: V02 unexpected kernel death holds lane recovering while detached tool remains
 ok 10 - V02 unexpected kernel death holds lane recovering while detached tool remains
   ---
-  duration_ms: 1378.43014
+  duration_ms: 1263.12532
   type: 'test'
   ...
 # Subtest: V02 waiting for a question occupies capacity; ready branches receive fair turns
 ok 11 - V02 waiting for a question occupies capacity; ready branches receive fair turns
   ---
-  duration_ms: 3680.755216
+  duration_ms: 3600.290324
   type: 'test'
   ...
-1..11
-# tests 11
+# Subtest: V02 fork file created before application commit remains a pending operation after restart
+ok 12 - V02 fork file created before application commit remains a pending operation after restart
+  ---
+  duration_ms: 1324.230821
+  type: 'test'
+  ...
+# Subtest: V02 worktree prepared before application commit is preserved and not recreated
+ok 13 - V02 worktree prepared before application commit is preserved and not recreated
+  ---
+  duration_ms: 182.912359
+  type: 'test'
+  ...
+# Subtest: V02 stop while waiting cancels the correlated question and pauses queued work
+ok 14 - V02 stop while waiting cancels the correlated question and pauses queued work
+  ---
+  duration_ms: 1427.000302
+  type: 'test'
+  ...
+1..14
+# tests 14
 # suites 0
-# pass 11
+# pass 14
 # fail 0
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 21286.645103
+# duration_ms 22032.779164

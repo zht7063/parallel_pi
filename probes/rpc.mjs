@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 export const root = fileURLToPath(new URL('../', import.meta.url));
 export class Rpc {
   events = [];
+  questions = new Map();
   changes = new EventEmitter();
   sequence = 0;
   stderr = '';
@@ -24,7 +25,11 @@ export class Rpc {
       while ((at = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, at).replace(/\r$/, '');
         buffer = buffer.slice(at + 1);
-        try { this.events.push(JSON.parse(line)); }
+        try {
+          const event = JSON.parse(line);
+          this.events.push(event);
+          if (event.type === 'extension_ui_request' && ['input', 'select', 'confirm', 'editor'].includes(event.method)) this.questions.set(event.id, event);
+        }
         catch { this.error = new Error(`Non-JSON RPC output: ${line}`); }
         this.changes.emit('change');
       }
@@ -33,7 +38,10 @@ export class Rpc {
     this.child.on('error', error => { this.error = error; this.changes.emit('change'); });
     this.child.on('exit', () => { this.exited = true; this.changes.emit('change'); });
   }
-  send(value) { this.child.stdin.write(JSON.stringify(value) + '\n'); }
+  send(value) {
+    this.child.stdin.write(JSON.stringify(value) + '\n');
+    if (value.type === 'extension_ui_response') this.questions.delete(value.id);
+  }
   async wait(predicate, after = 0, timeout = this.timeout) {
     const deadline = Date.now() + timeout;
     while (true) {
