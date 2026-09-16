@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img">
+<title>全局地图</title><desc>01  全局地图：Git 分支按列，session 为节点；右侧预览不改变执行。</desc>
+<g font-family="Noto Sans CJK SC, Microsoft YaHei, PingFang SC, sans-serif">
+<rect x="0" y="0" width="1440" height="900" rx="0" fill="#F3F5F8" stroke="#F3F5F8"/>
+<text x="28" y="37" font-size="20" fill="#202D42" font-weight="700">parallel_pi  /  MVP v0.1</text>
+<text x="28" y="64" font-size="13" fill="#526278" font-weight="400">01  全局地图：Git 分支按列，session 为节点；右侧预览不改变执行。</text>
+<text x="1220" y="38" font-size="13" fill="#526278" font-weight="400">静态线框 · 示例数据</text>
+<rect x="24" y="88" width="1392" height="748" rx="8" fill="#FFFFFF" stroke="#CAD3DF"/>
+<rect x="24" y="88" width="176" height="748" rx="8" fill="#EEF2F7" stroke="#CAD3DF"/>
+<text x="43" y="124" font-size="14" fill="#202D42" font-weight="700">项目导航</text>
+<text x="42" y="551" font-size="12" fill="#526278" font-weight="400">运行 2  ·  待回答 1</text>
+<rect x="40" y="572" width="144" height="34" rx="6" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="52" y="595" font-size="13" fill="#202D42" font-weight="400">＋ 添加项目</text>
+<rect x="40" y="623" width="144" height="43" rx="8" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="51" y="642" font-size="13" fill="#202D42" font-weight="400">docs-site</text>
+<text x="51" y="658" font-size="11" fill="#8B5C0C" font-weight="400">等待回答 1</text>
+<rect x="40" y="674" width="144" height="50" rx="8" fill="#EAF0FC" stroke="#315AA8"/>
+<text x="51" y="695" font-size="14" fill="#315AA8" font-weight="700">parallel_pi</text>
+<text x="51" y="713" font-size="11" fill="#315AA8" font-weight="400">当前项目 · 运行 2</text>
+<text x="42" y="747" font-size="11" fill="#526278" font-weight="400">新添加的项目靠下</text>
+<rect x="40" y="779" width="144" height="34" rx="6" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="52" y="802" font-size="13" fill="#202D42" font-weight="400">pi 设置</text>
+<text x="224" y="122" font-size="20" fill="#202D42" font-weight="700">parallel_pi / 全局地图</text>
+<text x="224" y="146" font-size="12" fill="#526278" font-weight="400">~/workspace/parallel_pi</text>
+<rect x="805" y="108" width="154" height="34" rx="6" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="817" y="131" font-size="13" fill="#202D42" font-weight="400">项目模型：继承</text>
+<rect x="971" y="108" width="110" height="34" rx="6" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="983" y="131" font-size="13" fill="#202D42" font-weight="400">文件记忆</text>
+<rect x="1093" y="108" width="134" height="34" rx="6" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="1105" y="131" font-size="13" fill="#202D42" font-weight="400">刷新分支</text>
+<rect x="1239" y="108" width="151" height="34" rx="6" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="1251" y="131" font-size="13" fill="#202D42" font-weight="400">＋ 新建分支</text>
+<rect x="220" y="169" width="1176" height="42" rx="8" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="236" y="196" font-size="14" fill="#202D42" font-weight="400">仅远端  origin/feature/search</text>
+<rect x="690" y="173" width="139" height="34" rx="6" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="702" y="196" font-size="13" fill="#202D42" font-weight="400">拉取到本地</text>
+<text x="849" y="196" font-size="12" fill="#526278" font-weight="400">刷新于 10:32  ·  点击刷新以更新</text>
+<rect x="220" y="228" width="264" height="569" rx="8" fill="#F8FAFC" stroke="#CAD3DF"/>
+<text x="235" y="258" font-size="16" fill="#202D42" font-weight="600">main</text>
+<text x="235" y="281" font-size="12" fill="#526278" font-weight="400">空闲</text>
+<rect x="235" y="742" width="234" height="34" rx="6" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="247" y="765" font-size="13" fill="#202D42" font-weight="400">＋ 新建独立会话</text>
+<rect x="500" y="228" width="264" height="569" rx="8" fill="#F8FAFC" stroke="#CAD3DF"/>
+<text x="515" y="258" font-size="16" fill="#202D42" font-weight="600">feature/queue</text>
+<text x="515" y="281" font-size="12" fill="#526278" font-weight="400">运行 1 · 排队 1</text>
+<rect x="515" y="742" width="234" height="34" rx="6" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="527" y="765" font-size="13" fill="#202D42" font-weight="400">＋ 新建独立会话</text>
+<rect x="780" y="228" width="264" height="569" rx="8" fill="#F8FAFC" stroke="#CAD3DF"/>
+<text x="795" y="258" font-size="16" fill="#202D42" font-weight="600">feature/ui</text>
+<text x="795" y="281" font-size="12" fill="#526278" font-weight="400">运行 1</text>
+<rect x="795" y="742" width="234" height="34" rx="6" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="807" y="765" font-size="13" fill="#202D42" font-weight="400">＋ 新建独立会话</text>
+<rect x="237" y="310" width="230" height="91" rx="8" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="250" y="336" font-size="14" fill="#202D42" font-weight="600">整理项目规则</text>
+<text x="250" y="360" font-size="12" fill="#526278" font-weight="400">本次执行结束</text>
+<text x="250" y="384" font-size="11" fill="#526278" font-weight="400">进入会话  ·  ＋ 接续</text>
+<path d="M352 401 L352 439" stroke="#CAD3DF" stroke-width="2" fill="none" stroke-dasharray=""/>
+<text x="364" y="425" font-size="11" fill="#526278" font-weight="400">接续</text>
+<rect x="237" y="439" width="230" height="91" rx="8" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="250" y="465" font-size="14" fill="#202D42" font-weight="600">补充设计说明</text>
+<text x="250" y="489" font-size="12" fill="#526278" font-weight="400">空闲</text>
+<text x="250" y="513" font-size="11" fill="#526278" font-weight="400">进入会话  ·  ＋ 接续</text>
+<rect x="517" y="310" width="230" height="91" rx="8" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="530" y="336" font-size="14" fill="#202D42" font-weight="600">讨论调度方案</text>
+<text x="530" y="360" font-size="12" fill="#526278" font-weight="400">本次执行结束</text>
+<text x="530" y="384" font-size="11" fill="#526278" font-weight="400">进入会话  ·  ＋ 接续</text>
+<path d="M632 401 L632 439" stroke="#CAD3DF" stroke-width="2" fill="none" stroke-dasharray=""/>
+<text x="643" y="426" font-size="11" fill="#526278" font-weight="400">接续</text>
+<rect x="517" y="439" width="230" height="91" rx="8" fill="#EAF0FC" stroke="#315AA8"/>
+<text x="530" y="465" font-size="14" fill="#202D42" font-weight="600">实现分支队列</text>
+<text x="530" y="489" font-size="12" fill="#315AA8" font-weight="400">运行中 · 正在检查工具</text>
+<text x="530" y="513" font-size="11" fill="#526278" font-weight="400">进入会话  ·  ＋ 接续</text>
+<path d="M632 401 L770 421" stroke="#CAD3DF" stroke-width="2" fill="none" stroke-dasharray="5 4"/>
+<path d="M770 421 L770 562" stroke="#CAD3DF" stroke-width="2" fill="none" stroke-dasharray="5 4"/>
+<path d="M770 562 L632 588" stroke="#CAD3DF" stroke-width="2" fill="none" stroke-dasharray="5 4"/>
+<text x="679" y="580" font-size="11" fill="#526278" font-weight="400">分叉</text>
+<rect x="517" y="597" width="230" height="91" rx="8" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="530" y="623" font-size="14" fill="#202D42" font-weight="600">尝试另一种取消方式</text>
+<text x="530" y="647" font-size="12" fill="#526278" font-weight="400">排队第 1 项</text>
+<text x="530" y="671" font-size="11" fill="#526278" font-weight="400">进入会话  ·  ＋ 接续</text>
+<rect x="797" y="310" width="230" height="91" rx="8" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="810" y="336" font-size="14" fill="#202D42" font-weight="600">设计会话地图</text>
+<text x="810" y="360" font-size="12" fill="#526278" font-weight="400">运行中 · 正在整理布局</text>
+<text x="810" y="384" font-size="11" fill="#526278" font-weight="400">进入会话  ·  ＋ 接续</text>
+<rect x="1066" y="226" width="330" height="589" rx="8" fill="#FFFFFF" stroke="#315AA8"/>
+<text x="1084" y="257" font-size="18" fill="#202D42" font-weight="700">会话详情</text>
+<text x="1362" y="256" font-size="22" fill="#526278" font-weight="400">×</text>
+<text x="1084" y="292" font-size="18" fill="#202D42" font-weight="700">实现分支队列</text>
+<text x="1084" y="320" font-size="13" fill="#315AA8" font-weight="400">feature/queue  ·  运行中</text>
+<path d="M1084 337 L1377 337" stroke="#CAD3DF" stroke-width="2" fill="none" stroke-dasharray=""/>
+<text x="1084" y="369" font-size="12" fill="#526278" font-weight="400">摘要</text>
+<text x="1084" y="396" font-size="14" fill="#202D42" font-weight="400">按 Git 分支串行执行任务，</text>
+<text x="1084" y="420" font-size="14" fill="#202D42" font-weight="400">其他分支可以并行。</text>
+<text x="1084" y="457" font-size="12" fill="#526278" font-weight="400">最近活动</text>
+<text x="1084" y="484" font-size="14" fill="#202D42" font-weight="400">正在检查取消后的工具进程</text>
+<text x="1084" y="530" font-size="13" fill="#526278" font-weight="400">当前分支有 3 个文件改动</text>
+<text x="1084" y="552" font-size="11" fill="#526278" font-weight="400">变更属于工作区，不等于本会话成果</text>
+<rect x="1084" y="580" width="142" height="34" rx="6" fill="#315AA8" stroke="#315AA8"/>
+<text x="1096" y="603" font-size="13" fill="#FFFFFF" font-weight="400">进入会话</text>
+<rect x="1237" y="580" width="142" height="34" rx="6" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="1249" y="603" font-size="13" fill="#202D42" font-weight="400">新建接续会话</text>
+<rect x="1084" y="625" width="295" height="34" rx="6" fill="#FFFFFF" stroke="#CAD3DF"/>
+<text x="1096" y="648" font-size="13" fill="#202D42" font-weight="400">查看分支变更</text>
+<text x="1084" y="787" font-size="12" fill="#526278" font-weight="400">完整对话与输入在会话视图中</text>
+<text x="224" y="820" font-size="12" fill="#526278" font-weight="400">拖动平移  ·  单击预览  ·  双击进入  ·  接续 / 分叉边有文字标记</text>
+<text x="28" y="873" font-size="13" fill="#526278" font-weight="400">布局草图：详情为覆盖区域；实际实现须确保展开不遮住第二次点击目标。配色与尺寸为设计提案。</text>
+</g></svg>

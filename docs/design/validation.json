@@ -1,0 +1,30 @@
+{
+  "scope": "Design baseline; technical validation deferred by user",
+  "markdown_files_checked": [
+    "README.md",
+    "DESIGN.md",
+    "docs/CONTEXT.md",
+    "docs/README.md",
+    "docs/design/README.md",
+    "docs/design-review.md",
+    "docs/engine-comparison.md",
+    "docs/memory-design.md",
+    "docs/mvp-discussion.md",
+    "docs/mvp-spec.md",
+    "docs/ui-interaction.md"
+  ],
+  "svg_files_checked": [
+    "docs/design/01-global-map.svg",
+    "docs/design/02-session.svg",
+    "docs/design/03-map-panel.svg"
+  ],
+  "local_links": "passed",
+  "svg_xml": "passed",
+  "requirement_ids": "C01-C14 present with traceability",
+  "acceptance_ids": "A01-A16 present",
+  "user_wireframe_review": "accepted all three SVGs",
+  "default_behavior_review": "accepted pause on stop, model fixed at enqueue, pause/retry/explicit continue on critical memory failure, configurable concurrency default 2",
+  "browser_interaction_tests": "not run; no application implementation",
+  "runtime_integration_tests": "not run; deferred by user",
+  "submodule_in_commit": false
+}
