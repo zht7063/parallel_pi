@@ -10,10 +10,18 @@ export default function (pi) {
     api: faux.api, baseUrl: faux.getModel().baseUrl, apiKey: 'local-fixture',
     models: faux.models, streamSimple: faux.provider.streamSimple,
   });
+  let askBeforeTool = false;
+  pi.on('tool_call', async (event, ctx) => {
+    if (askBeforeTool && event.toolName === 'bash') {
+      askBeforeTool = false;
+      await ctx.ui.input('Continue probe tool?');
+    }
+  });
   pi.on('before_agent_start', (event) => {
-    if (event.prompt === 'probe-tool') {
+    askBeforeTool = event.prompt === 'probe-question-tool';
+    if (event.prompt === 'probe-tool' || askBeforeTool) {
       faux.setResponses([
-        fauxAssistantMessage(fauxToolCall('bash', { command: 'printf probe-tool-output' }), { stopReason: 'toolUse' }),
+        fauxAssistantMessage(fauxToolCall('bash', { command: 'pwd; printf probe-tool-output' }), { stopReason: 'toolUse' }),
         fauxAssistantMessage('tool complete'),
       ]);
     } else if (event.prompt === 'probe-slow-tool') {

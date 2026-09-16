@@ -26,15 +26,15 @@ export class Coordinator {
     catch (error) { this.lock.close(); throw new Error('Another backend owns this data directory', { cause: error }); }
     this.db = new DatabaseSync(join(directory, 'app.sqlite'));
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
-      CREATE TABLE IF NOT EXISTS lane (id TEXT PRIMARY KEY, cwd TEXT UNIQUE, state TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS lane (id TEXT PRIMARY KEY, cwd TEXT UNIQUE, state TEXT NOT NULL, served INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS run (id TEXT PRIMARY KEY, lane TEXT NOT NULL, digest TEXT NOT NULL,
         prompt TEXT NOT NULL, model TEXT NOT NULL, state TEXT NOT NULL, pid INTEGER, started INTEGER, ended INTEGER, error TEXT);
       CREATE TABLE IF NOT EXISTS event (cursor INTEGER PRIMARY KEY, run TEXT NOT NULL, type TEXT NOT NULL, at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS operation (id TEXT PRIMARY KEY, lane TEXT NOT NULL, kind TEXT NOT NULL, target TEXT NOT NULL, state TEXT NOT NULL);`);
     // An unverified old process must never grant execution permission after restart.
     this.db.exec(`BEGIN IMMEDIATE;
-      UPDATE lane SET state='recovering' WHERE id IN (SELECT lane FROM run WHERE state IN ('starting','running','stopping'));
-      UPDATE run SET state='interrupted' WHERE state IN ('starting','running','stopping');
+      UPDATE lane SET state='recovering' WHERE id IN (SELECT lane FROM run WHERE state IN ('starting','running','stopping','waiting'));
+      UPDATE run SET state='interrupted' WHERE state IN ('starting','running','stopping','waiting');
       UPDATE lane SET state='recovering' WHERE id IN (SELECT lane FROM operation WHERE state='pending');
       COMMIT;`);
   }
@@ -49,7 +49,7 @@ export class Coordinator {
     }
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      this.db.prepare("INSERT INTO lane VALUES (?,?,'ready') ON CONFLICT(id) DO NOTHING").run(binding.key, binding.directory);
+      this.db.prepare("INSERT INTO lane (id,cwd,state) VALUES (?,?,'ready') ON CONFLICT(id) DO NOTHING").run(binding.key, binding.directory);
       const lane = this.db.prepare('SELECT * FROM lane WHERE id=?').get(binding.key);
       if (lane.cwd !== binding.directory) throw Error('Branch already bound to another directory');
       this.db.prepare("INSERT INTO run (id,lane,digest,prompt,model,state) VALUES (?,?,?,?,?,'queued')").run(id, binding.key, digest, prompt, model);
@@ -69,12 +69,13 @@ export class Coordinator {
     } catch (e) { this.db.exec('ROLLBACK'); throw e; }
   }
   pump() {
-    const candidates = this.db.prepare("SELECT run.*,lane.cwd FROM run JOIN lane ON lane.id=run.lane WHERE run.state='queued' AND lane.state='ready' ORDER BY run.rowid").all();
+    const candidates = this.db.prepare("SELECT run.*,lane.cwd FROM run JOIN lane ON lane.id=run.lane WHERE run.state='queued' AND lane.state='ready' ORDER BY lane.served,run.rowid").all();
     for (const run of candidates) {
       if (this.active.size >= this.limit) break;
       if ([...this.active.values()].some(a => a.lane === run.lane)) continue;
       if (this.db.prepare("SELECT 1 FROM operation WHERE lane=? AND state='pending'").get(run.lane)) continue;
       const entry = { lane: run.lane, rpc: null, cancelled: false };
+      this.db.prepare('UPDATE lane SET served=(SELECT COALESCE(MAX(served),0)+1 FROM lane) WHERE id=?').run(run.lane);
       this.active.set(run.id, entry);
       entry.done = this.execute(run, entry);
     }
@@ -90,9 +91,17 @@ export class Coordinator {
       entry.rpc = new Rpc(run.cwd, agentDir, ['--model', run.model]);
       this.onStage('after-spawn', run, entry);
       this.db.prepare('UPDATE run SET pid=?,started=? WHERE id=?').run(entry.rpc.child.pid, Date.now(), run.id);
+      const available = await entry.rpc.command('get_available_models');
+      if (!available.models.some(model => model.provider === 'parallel-probe' && model.id === run.model)) throw Error('Fixed model unavailable in catalog');
       const state = await entry.rpc.command('get_state');
       if (state.model?.provider !== 'parallel-probe' || state.model.id !== run.model) throw Error('Fixed model unavailable');
       this.transition(run.id, 'running');
+      let seen = entry.rpc.events.length;
+      entry.rpc.changes.on('change', () => {
+        const fresh = entry.rpc.events.slice(seen);
+        seen = entry.rpc.events.length;
+        if (fresh.some(event => event.type === 'extension_ui_request' && ['input', 'select', 'confirm', 'editor'].includes(event.method))) this.transition(run.id, 'waiting');
+      });
       const after = entry.rpc.events.length;
       await entry.rpc.command('prompt', { message: run.prompt });
       this.onStage('after-acceptance', run, entry);

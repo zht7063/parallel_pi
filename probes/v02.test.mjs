@@ -198,3 +198,30 @@ test('V02 unexpected kernel death holds lane recovering while detached tool rema
     assert.throws(() => coordinator.resume('kernel-death'), /reconciliation/);
   } finally { if (toolPid) killGroup(toolPid); await coordinator.close(); }
 });
+
+test('V02 waiting for a question occupies capacity; ready branches receive fair turns', { timeout: 30000 }, async t => {
+  const { a, b, data } = fixture(t);
+  const coordinator = new Coordinator(data, 1);
+  try {
+    coordinator.enqueue('question', a, 'probe-question-tool');
+    coordinator.enqueue('a-backlog', a, 'a next');
+    coordinator.enqueue('b-ready', b, 'b next');
+    coordinator.pump();
+    const entry = coordinator.active.get('question');
+    const request = await entry.rpc.wait(e => e.type === 'extension_ui_request' && e.method === 'input');
+    assert.equal(coordinator.get('question').state, 'waiting');
+    coordinator.pump();
+    assert.equal(coordinator.active.size, 1);
+    assert.equal(coordinator.get('b-ready').state, 'queued');
+    assert.equal(coordinator.get('a-backlog').state, 'queued');
+    entry.rpc.send({ type: 'extension_ui_response', id: request.id, value: 'continue' });
+    await entry.done;
+    assert.equal(coordinator.get('question').state, 'succeeded');
+    coordinator.pump();
+    assert.deepEqual([...coordinator.active.keys()], ['b-ready']);
+    await Promise.all([...coordinator.active.values()].map(e => e.done));
+    coordinator.pump();
+    await Promise.all([...coordinator.active.values()].map(e => e.done));
+    assert.equal(coordinator.get('a-backlog').state, 'succeeded');
+  } finally { await coordinator.close(); }
+});
