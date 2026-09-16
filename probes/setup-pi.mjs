@@ -10,6 +10,7 @@ const cwd = `${root}vendor/pi`;
 execFileSync('git', ['submodule', 'update', '--init', 'vendor/pi'], { cwd: root, stdio: 'inherit' });
 const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim();
 if (commit !== versions.pi.commit) throw Error(`Unexpected pi commit: ${commit}`);
+execFileSync('git', ['diff', '--quiet', 'HEAD'], { cwd });
 const archive = readFileSync(new URL('./fixtures/pi-model-data.json.gz', import.meta.url));
 if (createHash('sha256').update(archive).digest('hex') !== versions.pi.modelDataSha256) throw Error('Model data checksum mismatch');
 const target = `${cwd}/packages/ai/src/providers/data`;

@@ -6,7 +6,7 @@
 
 ```sh
 node probes/setup-pi.mjs
-node --test probes/v01.test.mjs
+node --test probes/v01.test.mjs probes/v01-upgrade.test.mjs
 ```
 
 `setup-pi.mjs` 核对 pi 子模块提交，恢复已校验的公开模型目录快照，再执行 `npm ci --ignore-scripts` 和上游离线构建。模型快照来自上游 `hydrate:model-data`，保留上游 manifest 和逐文件 hash，许可证沿用 `vendor/pi/LICENSE`。重新下载目录会得到不同数据，不能悄悄替换本快照。
@@ -30,3 +30,9 @@ node --test probes/v03.test.mjs
 ```
 
 使用固定 pi 的原生设置/认证存储和真实 RPC。配置修订包装器的内部路径依赖见验证报告。
+
+### V01 旧版本与真实模型
+
+`fixtures/pi-0.84.1-session.jsonl` 由真实旧版 SessionManager 生成；测试只重定位 fixture 的 cwd，其他历史条目保持不变。重新生成时，在 `probes/.cache/pi-previous` 安装精确版本 `@earendil-works/pi-coding-agent@0.84.1`（`--ignore-scripts`），核对 metadata 中的包完整性值，再运行 `node probes/generate-previous-session.mjs`。
+
+真实模型验证需在本地设置 `PARALLEL_PI_PROVIDER`、`PARALLEL_PI_MODEL` 和该 provider 的原生凭据环境变量，然后执行 `node --test probes/v01-live.test.mjs`。它会执行 4 次真实提示（文字、工具、图片、恢复），可能消耗额度；没有配置会明确失败，不会把跳过当通过。测试使用临时 HOME 与 agent 目录，不读取其他 harness 的凭据。不要把密钥写入命令记录或仓库。

@@ -1,16 +1,23 @@
 TAP version 13
-# Subtest: V01 real RPC: streams, tools, persistence, fork, images, questions, cancellation
-ok 1 - V01 real RPC: streams, tools, persistence, fork, images, questions, cancellation
+# Subtest: V01 actual pi 0.84.1 session opens, continues and forks with fixed 0.85.1 kernel
+ok 1 - V01 actual pi 0.84.1 session opens, continues and forks with fixed 0.85.1 kernel
   ---
-  duration_ms: 2696.338512
+  duration_ms: 1173.614383
   type: 'test'
   ...
-1..1
-# tests 1
+# V01 latency sample (ms): {"startupMs":1020.8189050000001,"resumeMs":1119.956031}
+# Subtest: V01 real RPC: streams, tools, persistence, fork, images, questions, cancellation
+ok 2 - V01 real RPC: streams, tools, persistence, fork, images, questions, cancellation
+  ---
+  duration_ms: 2328.604689
+  type: 'test'
+  ...
+1..2
+# tests 2
 # suites 0
-# pass 1
+# pass 2
 # fail 0
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 3749.749109
+# duration_ms 5605.970151

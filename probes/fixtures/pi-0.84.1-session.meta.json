@@ -1,0 +1,7 @@
+{
+  "package": "@earendil-works/pi-coding-agent",
+  "version": "0.84.1",
+  "integrity": "sha512-ncAqFrG+iybuPGOhMiZoEHkEzTpJgz3guYD32pD+M7ucc0WeHmauP6wa7qwP8V/KWvsZDVNa5XGsdZ7fkC7w7A==",
+  "generator": "Real 0.84.1 SessionManager; synthetic user/assistant messages; no model call",
+  "sha256": "cee9c77efbbb7f9926695f3062cedeb2d297bc7fb259fb03eedad638bd1f20da"
+}

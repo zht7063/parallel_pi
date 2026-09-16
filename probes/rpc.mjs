@@ -10,12 +10,13 @@ export class Rpc {
   sequence = 0;
   stderr = '';
   constructor(cwd, agentDir, extra = [], options = {}) {
+    this.timeout = options.live ? 120000 : 15000;
     this.child = spawn(process.execPath, [
       `${root}vendor/pi/packages/coding-agent/dist/rpc-entry.js`,
       '--offline', '--no-extensions', '--no-skills', '--no-prompt-templates',
       '-e', `${root}probes/fixture-extension.mjs`,
-      ...(options.nativeDefaults ? [] : ['--provider', 'parallel-probe', '--model', 'probe-a']), ...extra,
-    ], { cwd, env: { PATH: process.env.PATH, HOME: agentDir, PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: '1' }, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
+      ...(options.nativeDefaults ? [] : ['--provider', options.provider ?? 'parallel-probe', '--model', options.model ?? 'probe-a']), ...extra,
+    ], { cwd, env: { ...(options.live ? process.env : { PATH: process.env.PATH }), HOME: agentDir, PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: '1' }, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
     let buffer = '';
     this.child.stdout.setEncoding('utf8').on('data', chunk => {
       buffer += chunk;
@@ -33,7 +34,7 @@ export class Rpc {
     this.child.on('exit', () => { this.exited = true; this.changes.emit('change'); });
   }
   send(value) { this.child.stdin.write(JSON.stringify(value) + '\n'); }
-  async wait(predicate, after = 0, timeout = 15000) {
+  async wait(predicate, after = 0, timeout = this.timeout) {
     const deadline = Date.now() + timeout;
     while (true) {
       const match = this.events.slice(after).find(predicate);
