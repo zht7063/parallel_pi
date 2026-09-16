@@ -182,6 +182,8 @@ D：提交前由用户选择整文件范围、查看实际待提交内容并填�
 
 ## 9. 数据边界与架构草案（D / V）
 
+已确认方案见 [技术架构 v0.3](architecture.md)，包括五层职责、依赖边界、包映射与跟随 pi 更新策略。前端采用 Vue 3 + TypeScript，后端采用 Node.js，应用元数据采用 SQLite，浏览器通信采用 HTTP+SSE；优先 Linux/macOS、手动检查更新，omp 暂缓。架构确认不改变本规格的 C 约束；具体版本、地图组件及 RPC/SDK 接入方式仍待验证，V01–V04 尚未执行。
+
 ```mermaid
 flowchart LR
   UI[本地 Web UI] --> API[本地后端]

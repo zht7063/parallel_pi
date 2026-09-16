@@ -2,6 +2,8 @@
 
 状态：MVP v0.1 的三张静态 SVG 线框已获用户接受；没有应用 UI 实现或浏览器交互验证。
 
+前端技术基线已确认：Vue 3 + TypeScript。分层与依赖规则见 [技术架构](docs/architecture.md)；地图组件库尚待实际需求验证，架构确认不表示线框视觉细节已冻结。
+
 ## 产品与布局
 
 本地单用户开发工具。页面主要任务是查看 Git 分支及会话地图，并进入指定 session 持续工作。用户提出的布局与行为记录在 [地图与会话交互](docs/ui-interaction.md)，领域规则见 [MVP 讨论](docs/mvp-discussion.md)。

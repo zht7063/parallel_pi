@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "parallel_pi · 已确认项目架构（尚未实现）",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1390,
+      780
+    ]
+  },
+  "components": [
+    {
+      "id": "web-ui",
+      "type": "frontend",
+      "label": "展示层 · 地图与会话",
+      "sublabel": "apps/web · Vue 3 + TypeScript",
+      "pos": [
+        40,
+        310
+      ],
+      "size": [
+        240,
+        80
+      ]
+    },
+    {
+      "id": "http-transport",
+      "type": "backend",
+      "label": "传输层 · 协议映射",
+      "sublabel": "packages/transport",
+      "pos": [
+        400,
+        310
+      ],
+      "size": [
+        240,
+        80
+      ]
+    },
+    {
+      "id": "app-usecases",
+      "type": "backend",
+      "label": "应用层 · 用例与调度",
+      "sublabel": "packages/application",
+      "pos": [
+        760,
+        310
+      ],
+      "size": [
+        240,
+        80
+      ]
+    },
+    {
+      "id": "pi-engine",
+      "type": "external",
+      "label": "Pi Adapter → pi 子进程",
+      "sublabel": "infra-pi · vendor/pi 待引入",
+      "tag": "RPC 优先验证 / SDK 备选",
+      "pos": [
+        1120,
+        310
+      ],
+      "size": [
+        240,
+        80
+      ]
+    },
+    {
+      "id": "pure-domain",
+      "type": "backend",
+      "label": "领域层 · 纯规则",
+      "sublabel": "domain · Session / Run / Lane",
+      "pos": [
+        760,
+        80
+      ],
+      "size": [
+        240,
+        80
+      ]
+    },
+    {
+      "id": "process-platform",
+      "type": "backend",
+      "label": "平台适配 · 进程监督",
+      "sublabel": "infra-platform · Linux/macOS",
+      "pos": [
+        1120,
+        80
+      ],
+      "size": [
+        240,
+        80
+      ]
+    },
+    {
+      "id": "app-storage",
+      "type": "database",
+      "label": "存储适配 · 应用数据",
+      "sublabel": "infra-storage · SQLite / 附件",
+      "pos": [
+        400,
+        590
+      ],
+      "size": [
+        240,
+        80
+      ]
+    },
+    {
+      "id": "git-workspace",
+      "type": "database",
+      "label": "Git 适配 · 当前工作区",
+      "sublabel": "infra-git · Git / worktree",
+      "pos": [
+        760,
+        590
+      ],
+      "size": [
+        240,
+        80
+      ]
+    },
+    {
+      "id": "mwf-memory",
+      "type": "database",
+      "label": "记忆适配 · 长期知识",
+      "sublabel": "infra-mwf · worktree 的 .mwf/",
+      "pos": [
+        1120,
+        590
+      ],
+      "size": [
+        240,
+        80
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "browser-api",
+      "from": "web-ui",
+      "to": "http-transport",
+      "label": "HTTP / SSE",
+      "variant": "emphasis"
+    },
+    {
+      "id": "dispatch-usecase",
+      "from": "http-transport",
+      "to": "app-usecases",
+      "label": "调用用例",
+      "variant": "emphasis"
+    },
+    {
+      "id": "engine-port",
+      "from": "app-usecases",
+      "to": "pi-engine",
+      "label": "Engine",
+      "variant": "emphasis"
+    },
+    {
+      "id": "domain-decisions",
+      "from": "app-usecases",
+      "to": "pure-domain",
+      "label": "规则判定",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "supervise-process",
+      "from": "pi-engine",
+      "to": "process-platform",
+      "label": "监督能力",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "persist-app",
+      "from": "app-usecases",
+      "to": "app-storage",
+      "label": "事务与附件",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "workspace-port",
+      "from": "app-usecases",
+      "to": "git-workspace",
+      "label": "工作区操作",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        880,
+        505
+      ]
+    },
+    {
+      "id": "memory-port",
+      "from": "app-usecases",
+      "to": "mwf-memory",
+      "label": "记忆保存 / 纠正",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "读图：运行时调用，不是源码依赖",
+      "items": [
+        "server 装配并注入；后端各层同进程",
+        "contracts 仅承载公共请求、响应与事件",
+        "应用拥有 Interface；适配器实现它们"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "已确认：执行与上下文边界",
+      "items": [
+        "同 Git 分支串行，不同 Git 分支并行",
+        "思路分叉只分对话，始终使用当前代码",
+        "原生会话归 pi；长期知识归 MWF"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "架构已确认 · 技术探针待执行",
+      "items": [
+        "Vue 3 / SQLite / HTTP+SSE 已确认",
+        "V01–V04：内核、工作区、配置、记忆",
+        "手动检查更新；omp 暂缓；尚无应用代码"
+      ]
+    }
+  ]
+}

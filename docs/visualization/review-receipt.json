@@ -1,0 +1,11 @@
+{
+  "diagram_type": "architecture",
+  "output": "/home/zht/workspace/parallel_pi/docs/visualization/project-structure.html",
+  "specification_sha256": "342e84b3b2102039dd4471f669654fb4305f52e230bb5591f386d981ad35dc66",
+  "artifact_sha256": "affbb544f9af818c426a4e866da4c6e0d2aea51c3667b31ef3c5a49c8d202476",
+  "validation": "9/9 showcase, 0 errors, 0 warnings",
+  "browser_evidence": "passed",
+  "visual_review": "skipped (image reader unavailable)",
+  "visual_review_reason": "Image reader failed because the filesystem sandbox could not initialize; screenshot forwarding also could not be processed. No perceptual approval claimed.",
+  "correction_rounds": 0
+}

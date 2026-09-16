@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/home/zht/workspace/parallel_pi/docs/visualization/project-structure.architecture.json",
+  "output": "/home/zht/workspace/parallel_pi/docs/visualization/project-structure.html",
+  "specification": {
+    "sha256": "342e84b3b2102039dd4471f669654fb4305f52e230bb5591f386d981ad35dc66",
+    "bytes": 5000
+  },
+  "artifact": {
+    "sha256": "affbb544f9af818c426a4e866da4c6e0d2aea51c3667b31ef3c5a49c8d202476",
+    "bytes": 809955
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}
