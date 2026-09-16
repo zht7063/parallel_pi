@@ -1,0 +1,16 @@
+TAP version 13
+# Subtest: V01 real RPC: streams, tools, persistence, fork, images, questions, cancellation
+ok 1 - V01 real RPC: streams, tools, persistence, fork, images, questions, cancellation
+  ---
+  duration_ms: 2696.338512
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3749.749109

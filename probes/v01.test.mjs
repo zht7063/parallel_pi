@@ -1,0 +1,61 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Rpc } from './rpc.mjs';
+
+test('V01 real RPC: streams, tools, persistence, fork, images, questions, cancellation', { timeout: 90000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'parallel-pi-v01-'));
+  const cwd = join(dir, 'workspace');
+  const agent = join(dir, 'agent');
+  mkdirSync(cwd); mkdirSync(agent);
+  let rpc = new Rpc(cwd, agent);
+  try {
+    assert.equal((await rpc.command('get_state')).model.id, 'probe-a');
+    const events = await rpc.prompt('first\u2028message\u2029完整');
+    assert.ok(events.some(e => e.type === 'message_update'), 'real text stream');
+    const original = (await rpc.command('get_state')).sessionFile;
+    assert.ok(existsSync(original), 'session persisted');
+    const toolEvents = await rpc.prompt('probe-tool');
+    assert.ok(toolEvents.some(e => e.type === 'tool_execution_start'));
+    assert.ok(toolEvents.some(e => e.type === 'tool_execution_end' && !e.isError));
+    writeFileSync(join(cwd, 'current-code'), 'keep current code');
+    await rpc.prompt('fork-here');
+    const forkMessages = await rpc.command('get_fork_messages');
+    const selected = forkMessages.messages.find(m => m.text === 'fork-here');
+    assert.ok(selected);
+    const fork = await rpc.command('fork', { entryId: selected.entryId });
+    assert.equal(fork.text, 'fork-here');
+    assert.equal(fork.cancelled, false);
+    const inherited = await rpc.command('get_messages');
+    assert.ok(!JSON.stringify(inherited).includes('fork-here'), 'selected user message is returned for editing, not inherited');
+    assert.equal(readFileSync(join(cwd, 'current-code'), 'utf8'), 'keep current code');
+    await rpc.prompt('fork-child');
+    assert.notEqual((await rpc.command('get_state')).sessionFile, original);
+    await rpc.close();
+    rpc = new Rpc(cwd, agent, ['--session', original]);
+    assert.ok(JSON.stringify(await rpc.command('get_messages')).includes('fork-here'));
+    assert.ok(!JSON.stringify(await rpc.command('get_messages')).includes('fork-child'));
+    const image = { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aRZkAAAAASUVORK5CYII=' };
+    await rpc.prompt('image-check', { images: [image] });
+    assert.ok(JSON.stringify(await rpc.command('get_messages')).includes(image.data));
+    const after = rpc.events.length;
+    const question = rpc.command('prompt', { message: '/probe-question' });
+    const request = await rpc.wait(e => e.type === 'extension_ui_request' && e.method === 'input', after);
+    rpc.send({ type: 'extension_ui_response', id: request.id, value: 'accepted' });
+    await question;
+    await rpc.wait(e => e.method === 'notify' && e.message === 'answer:accepted', after);
+    const start = rpc.events.length;
+    await rpc.command('prompt', { message: 'probe-slow-tool' });
+    await rpc.wait(e => e.type === 'tool_execution_update', start);
+    await rpc.command('clear_queue');
+    await rpc.command('abort');
+    assert.equal((await rpc.command('get_state')).isStreaming, false);
+    assert.equal((await rpc.command('get_state')).pendingMessageCount, 0);
+    assert.ok(!existsSync(join(cwd, 'late-write')));
+  } finally {
+    await rpc.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -1,0 +1,19 @@
+{
+  "pi": {
+    "repository": "https://github.com/earendil-works/pi.git",
+    "commit": "6671c604766b3670ed95f405aa7856835d0ca702",
+    "packageVersion": "0.85.1",
+    "modelDataSha256": "bbf0d7c0f6a2105c8491f33d31e5b3ff8e24e966bf6a2962e2b17bd288f73ca2"
+  },
+  "mwf": {
+    "repository": "https://github.com/zht7063/skills.git",
+    "commit": "7b8be0e59647c90227c0cb945b279d7fa7ab14ef",
+    "packageVersion": "0.1.0"
+  },
+  "piMcpAdapter": "2.32.1",
+  "observedRuntime": {
+    "node": "v26.8.2",
+    "npm": "11.19.1",
+    "platform": "linux"
+  }
+}
