@@ -22,3 +22,11 @@ node --test probes/v02.test.mjs
 ```
 
 `coordinator.mjs` 是 SQLite 持久队列实验，用真实 worktree 和 pi 进程验证崩溃窗口。它保守阻止未核验恢复，不提供生产级进程树监督。
+
+## V03
+
+```sh
+node --test probes/v03.test.mjs
+```
+
+使用固定 pi 的原生设置/认证存储和真实 RPC。配置修订包装器的内部路径依赖见验证报告。

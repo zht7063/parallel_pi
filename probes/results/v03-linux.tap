@@ -1,0 +1,46 @@
+TAP version 13
+# Subtest: V03 global/project sources, session override and fixed queued selection
+ok 1 - V03 global/project sources, session override and fixed queued selection
+  ---
+  duration_ms: 2456.710836
+  type: 'test'
+  ...
+# Subtest: V03 native writes preserve unrelated edits; same-field stale write needs application revision guard
+ok 2 - V03 native writes preserve unrelated edits; same-field stale write needs application revision guard
+  ---
+  duration_ms: 52.282224
+  type: 'test'
+  ...
+# Subtest: V03 native credential access, missing auth and conflict check inside locked callback
+ok 3 - V03 native credential access, missing auth and conflict check inside locked callback
+  ---
+  duration_ms: 58.561233
+  type: 'test'
+  ...
+# Subtest: V03 revision-aware native settings wrapper rejects stale edits under the existing lock
+ok 4 - V03 revision-aware native settings wrapper rejects stale edits under the existing lock
+  ---
+  duration_ms: 47.603015
+  type: 'test'
+  ...
+# Subtest: V03 durable queue retains model and fails unavailable model without substitution
+ok 5 - V03 durable queue retains model and fails unavailable model without substitution
+  ---
+  duration_ms: 2453.539331
+  type: 'test'
+  ...
+# Subtest: V03 real RPC rejects a prompt with missing provider credentials
+ok 6 - V03 real RPC rejects a prompt with missing provider credentials
+  ---
+  duration_ms: 1031.085341
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7570.965888

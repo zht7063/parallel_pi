@@ -44,6 +44,20 @@
 
 范围限制：协调器是实验实现，没有正式应用分层、通用进程身份核验或自动对账；没有 macOS 证据。不能据此宣称全部 A01–A16 已通过。
 
-## V03–V04
+## V03：配置、模型固定与凭据
 
-实验进行中，结果将在对应轮次提交时补充。
+命令：`node --test probes/v03.test.mjs`。Linux 6 项实验通过，见 `probes/results/v03-linux.tap`。
+
+- 真实双 worktree 的 `.pi/settings.json` 独立覆盖全局设置；原生 SettingsManager 可分别读取配置来源。
+- RPC 对未信任项目忽略项目配置；只在隔离测试项目显式 `--approve` 后加载该项目设置。应用需要保留原生项目信任边界，不应对所有目录静默批准。
+- session 显式切换模型；持久队列保存指定模型，默认值变化不影响已入队 run。
+- **CLI 可以构造目录中不存在的模型 ID**；仅核对 `get_state.model.id` 不足以证明可用。实验协调器现在在 prompt 前核对 `get_available_models` 的精确 provider/model 成员资格，缺失时暂停，不替换。
+- RPC `set_model` 只查已认证的可用模型，缺少凭据也可能返回 Model not found；直接启动该模型后，prompt 明确报 No API key。适配层需结合凭据/目录事实解释错误。
+- 原生设置保存保留外部编辑的无关字段，但同字段旧编辑会覆盖新值。实验包装器在原生 FileSettingsStorage 锁内检查完整文件修订，旧修订被拒绝；损坏 JSON 保留原文件并报告错误。
+- AuthStorage 的 locked modify 回调可比较预期凭据再修改；保留其他 provider，文件创建权限为 0600。测试仅使用假的本地凭据。
+
+限制：配置包装器使用固定 pi 的内部路径，应保留升级契约测试；非合作外部编辑器不遵守原生文件锁，尚不能声称任意编辑器的检查/写入竞态都已解决。没有真实 provider 或 macOS 结果。
+
+## V04
+
+实验进行中，结果将在本轮提交时补充。
