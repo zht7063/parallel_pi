@@ -2,6 +2,8 @@
 
 2026-09-16。本文件记录实际实验，设计文档中的验收范围仍然有效。
 
+最终从锁文件和固定快照重新安装、构建后，`npm run probe` 的 Linux 全套 **32 项通过，0 失败、0 跳过**。环境、命令和源文件 SHA-256 见 [验证清单](../probes/results/linux-verified.json)，逐项输出见 [TAP 记录](../probes/results/linux-verified.tap)。该结果不包含真实模型与其他平台。
+
 ## 环境与边界
 
 - Linux；Node.js v26.8.2、npm 11.19.1。

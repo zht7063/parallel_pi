@@ -1,0 +1,203 @@
+TAP version 13
+# Subtest: V01 actual pi 0.84.1 session opens, continues and forks with fixed 0.85.1 kernel
+ok 1 - V01 actual pi 0.84.1 session opens, continues and forks with fixed 0.85.1 kernel
+  ---
+  duration_ms: 1089.82752
+  type: 'test'
+  ...
+# V01 latency sample (ms): {"startupMs":1037.7963399999999,"resumeMs":1001.3232089999999}
+# Subtest: V01 real RPC: streams, tools, persistence, fork, images, questions, cancellation
+ok 2 - V01 real RPC: streams, tools, persistence, fork, images, questions, cancellation
+  ---
+  duration_ms: 2212.555246
+  type: 'test'
+  ...
+# Subtest: V02 real worktrees: serial per branch, parallel across branches, canonical aliases, idempotency
+ok 3 - V02 real worktrees: serial per branch, parallel across branches, canonical aliases, idempotency
+  ---
+  duration_ms: 2740.564469
+  type: 'test'
+  ...
+# Subtest: V02 stop pauses lane, keeps edits and queued work, then explicit resume
+ok 4 - V02 stop pauses lane, keeps edits and queued work, then explicit resume
+  ---
+  duration_ms: 2481.328137
+  type: 'test'
+  ...
+# Subtest: V02 changed worktree binding fails and pauses instead of running in another branch
+ok 5 - V02 changed worktree binding fails and pauses instead of running in another branch
+  ---
+  duration_ms: 136.525625
+  type: 'test'
+  ...
+# Subtest: V02 crash recovery: backend SIGKILL closes stdin and pi cleans tool
+ok 6 - V02 crash recovery: backend SIGKILL closes stdin and pi cleans tool
+  ---
+  duration_ms: 1328.199188
+  type: 'test'
+  ...
+# Subtest: V02 crash recovery: kernel SIGKILL leaves detached tool
+ok 7 - V02 crash recovery: kernel SIGKILL leaves detached tool
+  ---
+  duration_ms: 1287.273274
+  type: 'test'
+  ...
+# Subtest: V02 pending session creation blocks branch; restart requires reconciliation of real file
+ok 8 - V02 pending session creation blocks branch; restart requires reconciliation of real file
+  ---
+  duration_ms: 1206.909228
+  type: 'test'
+  ...
+# Subtest: V02 startup crash window: before-spawn is never automatically replayed
+ok 9 - V02 startup crash window: before-spawn is never automatically replayed
+  ---
+  duration_ms: 262.064533
+  type: 'test'
+  ...
+# Subtest: V02 startup crash window: after-spawn is never automatically replayed
+ok 10 - V02 startup crash window: after-spawn is never automatically replayed
+  ---
+  duration_ms: 1410.66723
+  type: 'test'
+  ...
+# Subtest: V02 startup crash window: after-acceptance is never automatically replayed
+ok 11 - V02 startup crash window: after-acceptance is never automatically replayed
+  ---
+  duration_ms: 1453.187577
+  type: 'test'
+  ...
+# Subtest: V02 unexpected kernel death holds lane recovering while detached tool remains
+ok 12 - V02 unexpected kernel death holds lane recovering while detached tool remains
+  ---
+  duration_ms: 1278.463994
+  type: 'test'
+  ...
+# Subtest: V02 waiting for a question occupies capacity; ready branches receive fair turns
+ok 13 - V02 waiting for a question occupies capacity; ready branches receive fair turns
+  ---
+  duration_ms: 3416.419317
+  type: 'test'
+  ...
+# Subtest: V02 fork file created before application commit remains a pending operation after restart
+ok 14 - V02 fork file created before application commit remains a pending operation after restart
+  ---
+  duration_ms: 1310.163297
+  type: 'test'
+  ...
+# Subtest: V02 worktree prepared before application commit is preserved and not recreated
+ok 15 - V02 worktree prepared before application commit is preserved and not recreated
+  ---
+  duration_ms: 195.452221
+  type: 'test'
+  ...
+# Subtest: V02 stop while waiting cancels the correlated question and pauses queued work
+ok 16 - V02 stop while waiting cancels the correlated question and pauses queued work
+  ---
+  duration_ms: 1494.864675
+  type: 'test'
+  ...
+# Subtest: V03 global/project sources, session override and fixed queued selection
+ok 17 - V03 global/project sources, session override and fixed queued selection
+  ---
+  duration_ms: 2311.985375
+  type: 'test'
+  ...
+# Subtest: V03 native writes preserve unrelated edits; same-field stale write needs application revision guard
+ok 18 - V03 native writes preserve unrelated edits; same-field stale write needs application revision guard
+  ---
+  duration_ms: 50.111226
+  type: 'test'
+  ...
+# Subtest: V03 native credential access, missing auth and conflict check inside locked callback
+ok 19 - V03 native credential access, missing auth and conflict check inside locked callback
+  ---
+  duration_ms: 61.852236
+  type: 'test'
+  ...
+# Subtest: V03 revision-aware native settings wrapper rejects stale edits under the existing lock
+ok 20 - V03 revision-aware native settings wrapper rejects stale edits under the existing lock
+  ---
+  duration_ms: 46.002933
+  type: 'test'
+  ...
+# Subtest: V03 durable queue retains model and fails unavailable model without substitution
+ok 21 - V03 durable queue retains model and fails unavailable model without substitution
+  ---
+  duration_ms: 2472.486158
+  type: 'test'
+  ...
+# Subtest: V03 real RPC rejects a prompt with missing provider credentials
+ok 22 - V03 real RPC rejects a prompt with missing provider credentials
+  ---
+  duration_ms: 1165.546455
+  type: 'test'
+  ...
+# Subtest: V04 fixed MWF extension + real pi loader + MCP tools + bootstrap/resume
+ok 23 - V04 fixed MWF extension + real pi loader + MCP tools + bootstrap/resume
+  ---
+  duration_ms: 3578.600871
+  type: 'test'
+  ...
+# Subtest: V04 upstream real SIGKILL writer releases lock and recovers durable receipt
+ok 24 - V04 upstream real SIGKILL writer releases lock and recovers durable receipt
+  ---
+  duration_ms: 833.498381
+  type: 'test'
+  ...
+# Subtest: V04 successful run + failed critical save pause lane; restart retries only save
+ok 25 - V04 successful run + failed critical save pause lane; restart retries only save
+  ---
+  duration_ms: 1642.659831
+  type: 'test'
+  ...
+# Subtest: V04 bootstrap, recall, idempotent saves and conflicting request IDs
+ok 26 - V04 bootstrap, recall, idempotent saves and conflicting request IDs
+  ---
+  duration_ms: 246.724588
+  type: 'test'
+  ...
+# Subtest: V04 interrupted transactions recover without duplicate records
+ok 27 - V04 interrupted transactions recover without duplicate records
+  ---
+  duration_ms: 570.960848
+  type: 'test'
+  ...
+# Subtest: V04 recovery preserves an external edit and its pending journal
+ok 28 - V04 recovery preserves an external edit and its pending journal
+  ---
+  duration_ms: 149.176684
+  type: 'test'
+  ...
+# Subtest: V04 real concurrent CLI writers serialize and deduplicate
+ok 29 - V04 real concurrent CLI writers serialize and deduplicate
+  ---
+  duration_ms: 874.660699
+  type: 'test'
+  ...
+# Subtest: V04 native update has no caller revision guard (documented capability gap)
+ok 30 - V04 native update has no caller revision guard (documented capability gap)
+  ---
+  duration_ms: 213.690377
+  type: 'test'
+  ...
+# Subtest: V04 real worktrees inherit tracked memory but do not share subsequent writes
+ok 31 - V04 real worktrees inherit tracked memory but do not share subsequent writes
+  ---
+  duration_ms: 531.472572
+  type: 'test'
+  ...
+# Subtest: V04 revision adapter uses native lock and transaction to preserve external corrections
+ok 32 - V04 revision adapter uses native lock and transaction to preserve external corrections
+  ---
+  duration_ms: 478.035064
+  type: 'test'
+  ...
+1..32
+# tests 32
+# suites 0
+# pass 32
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 44262.528759
