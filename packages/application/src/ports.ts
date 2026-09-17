@@ -23,7 +23,7 @@ export interface Lane {
 }
 export interface Operation {
   id: string;
-  laneId: string;
+  laneId: string | null;
   kind:
     | 'prepare-worktree'
     | 'create-session'
@@ -35,6 +35,7 @@ export interface Operation {
     | 'inspect-memory'
     | 'change-memory'
     | 'inspect-git'
+    | 'inspect-repository'
     | 'preview-git-commit'
     | 'commit-git'
     | 'recover-git-commit'
@@ -161,9 +162,16 @@ export interface WorkspaceAccess {
     jobId: string;
   }): Promise<GitCommitResult>;
   inspectChanges(directory: string, operationId: string): Promise<GitChangesView>;
-  inspect(directory: string): Promise<RepositoryFacts>;
-  validate(binding: { repository: string; ref: string; directory: string }): Promise<void>;
-  checkBranchName(directory: string, name: string): Promise<void>;
+  identify(
+    directory: string,
+    operationId?: string,
+  ): Promise<Pick<RepositoryFacts, 'repository' | 'directory' | 'ref' | 'head'>>;
+  inspect(directory: string, operationId?: string): Promise<RepositoryFacts>;
+  validate(
+    binding: { repository: string; ref: string; directory: string },
+    operationId?: string,
+  ): Promise<void>;
+  checkBranchName(directory: string, name: string, operationId?: string): Promise<void>;
   createBranch(
     directory: string,
     name: string,
@@ -179,7 +187,12 @@ export interface WorkspaceAccess {
     operationId?: string,
   ): Promise<void>;
   /** null means absent; a different/ambiguous binding throws, never silently replaces it. */
-  reconcileWorktree(repository: string, ref: string, target: string): Promise<string | null>;
+  reconcileWorktree(
+    repository: string,
+    ref: string,
+    target: string,
+    operationId?: string,
+  ): Promise<string | null>;
 }
 export interface GitFileChange {
   path: string;

@@ -42,6 +42,7 @@ export function createHarness(deps: {
   const { store, git, engine, supervisor, runtime, attachments, handoffs } = deps;
   const maintenance = new Set<string>();
   const maintenanceDone = new Set<Promise<void>>();
+  const activeMetadata = new Set<string>();
   const active = new Map<
     string,
     { laneId: string; connection: EngineConnection | null; cancelled: boolean; done: Promise<void> }
@@ -51,6 +52,10 @@ export function createHarness(deps: {
   const snapshot = () => store.snapshot();
   function requireReady() {
     if (!ready || closing) throw new Error('Application is recovering or shutting down');
+    if (
+      snapshot().state.operations.some((item) => item.laneId === null && item.state === 'uncertain')
+    )
+      throw new Error('Git 仓库检查尚未确认收束；请重试添加项目以核对原检查。');
   }
   function lane(id: string): Lane {
     const value = snapshot().state.lanes.find((item) => item.id === id);
@@ -141,7 +146,7 @@ export function createHarness(deps: {
     if (child.origin?.kind !== 'fork') throw new Error('Fork origin is missing');
     return {
       operationId: operation.id,
-      directory: lane(operation.laneId).directory!,
+      directory: lane(child.laneId).directory!,
       sourceRef: session(child.origin.sessionId).nativeRef,
       targetRef: operation.target,
       entryId: child.origin.entryId,
@@ -198,25 +203,105 @@ export function createHarness(deps: {
     });
     return operation;
   }
+  async function readRepository<T>(
+    laneId: string | null,
+    target: string,
+    read: (operationId: string) => Promise<T>,
+  ): Promise<T> {
+    if (closing) throw new Error('Application is shutting down');
+    const operation: Operation = {
+      id: runtime.id(),
+      laneId,
+      kind: 'inspect-repository',
+      target,
+      state: 'pending',
+      error: null,
+      createdAt: runtime.now(),
+    };
+    store.transaction((tx) => {
+      tx.state.operations.push(operation);
+      tx.emit('git.metadata-started', { operationId: operation.id });
+    });
+    activeMetadata.add(operation.id);
+    try {
+      const result = await read(operation.id);
+      store.transaction((tx) => {
+        tx.state.operations.find((item) => item.id === operation.id)!.state = 'completed';
+        tx.emit('git.metadata-completed', { operationId: operation.id });
+      });
+      return result;
+    } catch (cause) {
+      const proof = await supervisor.recover(operation.id);
+      store.transaction((tx) => {
+        const record = tx.state.operations.find((item) => item.id === operation.id)!;
+        record.state = proof.settled ? 'failed' : 'uncertain';
+        record.error = proof.settled
+          ? cause instanceof Error
+            ? cause.message
+            : 'Git inspection failed'
+          : proof.reason;
+        tx.emit('git.metadata-failed', { operationId: operation.id });
+      });
+      if (!proof.settled && laneId !== null) setLane(laneId, 'recovering', proof.reason);
+      throw cause;
+    } finally {
+      activeMetadata.delete(operation.id);
+    }
+  }
+  const inspectRepository = (directory: string, laneId: string | null) =>
+    readRepository(laneId, directory, (id) => git.inspect(directory, id));
+  const validateRepository = (
+    binding: { repository: string; ref: string; directory: string },
+    laneId: string,
+  ) => readRepository(laneId, binding.directory, (id) => git.validate(binding, id));
+  const reconcileWorktree = (repository: string, ref: string, target: string, laneId: string) =>
+    readRepository(laneId, target, (id) => git.reconcileWorktree(repository, ref, target, id));
+  async function recoverUnboundReads() {
+    let settled = true;
+    for (const operation of snapshot().state.operations.filter(
+      (item) =>
+        item.laneId === null &&
+        !activeMetadata.has(item.id) &&
+        ['pending', 'uncertain'].includes(item.state),
+    )) {
+      const proof = await supervisor.recover(operation.id);
+      store.transaction((tx) => {
+        const record = tx.state.operations.find((item) => item.id === operation.id)!;
+        record.state = proof.settled ? 'failed' : 'uncertain';
+        record.error = proof.settled
+          ? 'Repository inspection interrupted; retry explicitly'
+          : proof.reason;
+        tx.emit('git.metadata-reconciled', { operationId: operation.id, settled: proof.settled });
+      });
+      if (!proof.settled) settled = false;
+    }
+    return settled;
+  }
   async function prepare(laneId: string): Promise<string> {
     const current = lane(laneId),
       owner = project(current.projectId);
     if (current.directory) {
-      await git.validate({
-        repository: owner.repository,
-        ref: current.ref,
-        directory: current.directory,
-      });
+      await validateRepository(
+        {
+          repository: owner.repository,
+          ref: current.ref,
+          directory: current.directory,
+        },
+        laneId,
+      );
       return current.directory;
     }
-    const facts = await git.inspect(owner.directory);
+    const facts = await inspectRepository(owner.directory, laneId);
     const existing = facts.worktrees.find((item) => item.ref === current.ref && !item.locked);
     if (existing) {
-      await git.validate({
-        repository: owner.repository,
-        ref: current.ref,
-        directory: existing.directory,
-      });
+      await validateRepository(
+        {
+          repository: owner.repository,
+          ref: current.ref,
+          directory: existing.directory,
+        },
+        laneId,
+      );
       store.transaction((tx) => {
         tx.state.lanes.find((item) => item.id === laneId)!.directory = existing.directory;
         tx.emit('lane.changed', { laneId });
@@ -227,7 +312,7 @@ export function createHarness(deps: {
     const operation = beginOperation(laneId, 'prepare-worktree', target);
     try {
       await git.prepareWorktree(owner.directory, current.ref, target, operation.id);
-      const bound = await git.reconcileWorktree(owner.repository, current.ref, target);
+      const bound = await reconcileWorktree(owner.repository, current.ref, target, laneId);
       if (!bound) throw new Error('Created worktree cannot be found');
       store.transaction((tx) => {
         tx.state.lanes.find((item) => item.id === laneId)!.directory = bound;
@@ -347,11 +432,14 @@ export function createHarness(deps: {
         run.text,
         run.attachmentIds.map((id) => attachments.get(id)),
       );
-      await git.validate({
-        repository: project(lane(run.laneId).projectId).repository,
-        ref: lane(run.laneId).ref,
-        directory,
-      });
+      await validateRepository(
+        {
+          repository: project(lane(run.laneId).projectId).repository,
+          ref: lane(run.laneId).ref,
+          directory,
+        },
+        run.laneId,
+      );
       const messages = await entry.connection.messages();
       store.transaction((tx) => {
         tx.state.sessions.find((item) => item.id === run.sessionId)!.messages = messages;
@@ -401,6 +489,7 @@ export function createHarness(deps: {
   function pump() {
     if (!ready || closing) return;
     const { state } = snapshot();
+    if (state.operations.some((item) => item.laneId === null && item.state === 'uncertain')) return;
     const lanes = state.lanes.filter(
       (item) =>
         !maintenance.has(item.id) &&
@@ -479,14 +568,18 @@ export function createHarness(deps: {
           continue;
         try {
           if (
-            ['inspect-config', 'inspect-memory', 'inspect-git', 'preview-git-commit'].includes(
-              operation.kind,
-            )
+            [
+              'inspect-config',
+              'inspect-memory',
+              'inspect-git',
+              'preview-git-commit',
+              'inspect-repository',
+            ].includes(operation.kind)
           ) {
             store.transaction((tx) => {
               tx.state.operations.find((item) => item.id === operation.id)!.state = 'failed';
               tx.emit(
-                operation.kind === 'inspect-git'
+                ['inspect-git', 'preview-git-commit', 'inspect-repository'].includes(operation.kind)
                   ? 'git.inspection-interrupted'
                   : operation.kind === 'inspect-memory'
                     ? 'memory.inspection-interrupted'
@@ -500,7 +593,7 @@ export function createHarness(deps: {
             const owner = project(lane(laneId).projectId);
             let found = false;
             if (operation.kind === 'create-branch') {
-              const facts = await git.inspect(owner.directory);
+              const facts = await inspectRepository(owner.directory, laneId);
               const branch = facts.branches.find((item) => item.ref === operation.target);
               if (
                 branch &&
@@ -554,7 +647,7 @@ export function createHarness(deps: {
             owner = project(current.projectId);
           const found =
             operation.kind === 'prepare-worktree'
-              ? await git.reconcileWorktree(owner.repository, current.ref, operation.target)
+              ? await reconcileWorktree(owner.repository, current.ref, operation.target, laneId)
               : await engine.reconcileSession(operation.target, current.directory!);
           store.transaction((tx) => {
             const record = tx.state.operations.find((item) => item.id === operation.id)!;
@@ -603,7 +696,7 @@ export function createHarness(deps: {
     const operation = beginOperation(laneId, 'fetch-remotes', directory);
     try {
       await git.fetchRemotes(directory, operation.id, remote);
-      syncBranches(owner.id, await git.inspect(directory));
+      syncBranches(owner.id, await inspectRepository(directory, laneId));
       store.transaction((tx) => {
         tx.state.operations.find((item) => item.id === operation.id)!.state = 'completed';
         const project = tx.state.projects.find((item) => item.id === owner.id)!;
@@ -746,6 +839,7 @@ export function createHarness(deps: {
     events: (after: number) => store.events(after),
     status: () => ({ concurrency: snapshot().state.concurrency }),
     async initialize() {
+      await recoverUnboundReads();
       store.transaction((tx) => {
         for (const run of tx.state.runs.filter((item) => activeStates.includes(item.state))) {
           run.state = 'interrupted';
@@ -758,7 +852,8 @@ export function createHarness(deps: {
         for (const operation of tx.state.operations.filter((item) =>
           ['pending', 'uncertain'].includes(item.state),
         ))
-          tx.state.lanes.find((item) => item.id === operation.laneId)!.state = 'recovering';
+          if (operation.laneId !== null)
+            tx.state.lanes.find((item) => item.id === operation.laneId)!.state = 'recovering';
         for (const job of tx.state.gitCommits.filter((item) =>
           ['pending', 'uncertain'].includes(item.state),
         ))
@@ -811,29 +906,81 @@ export function createHarness(deps: {
       pump();
     },
     async addProject(directory: string) {
-      requireReady();
-      const facts = await git.inspect(directory);
-      const owner = store.transaction((tx) => {
-        const existing = tx.state.projects.find((item) => item.repository === facts.repository);
+      if (!ready || closing) throw new Error('Application is recovering or shutting down');
+      const release = holdMaintenance('project-read:' + runtime.id());
+      let releaseRepository: (() => void) | undefined;
+      try {
+        await recoverUnboundReads();
+        requireReady();
+        // Identity lookup cannot invoke fsmonitor/clean filters. Existing aliases
+        // need no dirty scan while their repository may be executing a run.
+        const identity = await readRepository(null, directory, (id) => git.identify(directory, id));
+        const existing = snapshot().state.projects.find(
+          (item) => item.repository === identity.repository,
+        );
         if (existing) return existing;
-        const value: Project = {
-          id: runtime.id(),
-          repository: facts.repository,
-          directory: facts.directory,
-          title: facts.directory.split('/').filter(Boolean).at(-1) ?? facts.directory,
-          createdAt: runtime.now(),
-        };
-        tx.state.projects.push(value);
-        tx.emit('project.added', { projectId: value.id });
-        return value;
-      });
-      syncBranches(owner.id, facts);
-      return owner;
+        const key = 'repository:' + identity.repository;
+        if (maintenance.has(key))
+          throw new Error('Repository is being added; retry after its current inspection');
+        releaseRepository = holdMaintenance(key);
+        const facts = await inspectRepository(directory, null);
+        if (facts.repository !== identity.repository)
+          throw new Error('Repository identity changed during inspection');
+        const owner = store.transaction((tx) => {
+          const value: Project = {
+            id: runtime.id(),
+            repository: facts.repository,
+            directory: facts.directory,
+            title: facts.directory.split('/').filter(Boolean).at(-1) ?? facts.directory,
+            createdAt: runtime.now(),
+          };
+          tx.state.projects.push(value);
+          tx.emit('project.added', { projectId: value.id });
+          return value;
+        });
+        syncBranches(owner.id, facts);
+        return owner;
+      } finally {
+        releaseRepository?.();
+        release();
+        pump();
+      }
     },
     async refreshProject(id: string) {
       requireReady();
-      const owner = project(id);
-      syncBranches(id, await git.inspect(owner.directory));
+      const owner = project(id),
+        branches = snapshot().state.lanes.filter((item) => item.projectId === id),
+        key = 'project-refresh:' + id;
+      if (
+        maintenance.has(key) ||
+        branches.some(
+          (branch) =>
+            maintenance.has(branch.id) ||
+            branch.state === 'recovering' ||
+            [...active.values()].some((item) => item.laneId === branch.id),
+        )
+      )
+        throw new Error(
+          'Project is occupied; wait for its current operation before refreshing branches',
+        );
+      const releases = [
+        holdMaintenance(key),
+        ...branches.map((branch) => holdMaintenance(branch.id)),
+      ];
+      try {
+        syncBranches(
+          id,
+          await inspectRepository(
+            owner.directory,
+            branches.find((branch) => branch.directory === owner.directory)?.id ??
+              branches[0]?.id ??
+              null,
+          ),
+        );
+      } finally {
+        for (const release of releases) release();
+        pump();
+      }
     },
     async createBranch(input: {
       requestId: string;
@@ -856,8 +1003,10 @@ export function createHarness(deps: {
       return withLane(input.laneId, async () => {
         const owner = project(lane(input.laneId).projectId);
         const directory = await prepare(input.laneId);
-        await git.checkBranchName(directory, input.name);
-        let facts = await git.inspect(directory);
+        await readRepository(input.laneId, directory, (id) =>
+          git.checkBranchName(directory, input.name, id),
+        );
+        let facts = await inspectRepository(directory, input.laneId);
         if (facts.branches.some((branch) => branch.ref === `refs/heads/${input.name}`))
           throw new Error('Branch already exists; choose another name or use the existing branch');
         if (input.track) {
@@ -866,7 +1015,7 @@ export function createHarness(deps: {
           )?.remote;
           if (!remote) throw new Error('Remote branch no longer exists; refresh the list');
           await refreshRemoteRefs(input.laneId, directory, remote);
-          facts = await git.inspect(directory);
+          facts = await inspectRepository(directory, input.laneId);
         }
         const start = input.track
           ? facts.remoteBranches.find((branch) => branch.ref === input.startRef)
@@ -897,7 +1046,7 @@ export function createHarness(deps: {
             operation.id,
             input.track,
           );
-          const after = await git.inspect(directory);
+          const after = await inspectRepository(directory, input.laneId);
           const created = after.branches.find((branch) => branch.ref === operation.target);
           if (
             !created ||

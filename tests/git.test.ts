@@ -198,3 +198,47 @@ test('a staged deletion recreated on disk remains one partial path in Git previe
   assert.match(file.workingDiff, /recreated contents/);
   assert.equal(git('diff', '--cached', '--name-status'), 'D\tfile.txt');
 });
+
+test('repository metadata inspection reaps detached fsmonitor children before returning', async (t) => {
+  const { createSupervisor } = await import('@parallel-pi/infra-platform');
+  const { root, repository, git } = fixture();
+  const originalDirectory = process.cwd();
+  process.chdir(root);
+  const pids = join(root, 'fsmonitor-pids');
+  t.after(() => {
+    process.chdir(originalDirectory);
+    if (existsSync(pids))
+      for (const line of readFileSync(pids, 'utf8').trim().split('\n')) {
+        try {
+          process.kill(Number(line), 'SIGKILL');
+        } catch {
+          /* Already reaped. */
+        }
+      }
+    rmSync(root, { recursive: true, force: true });
+  });
+  const hook = join(root, 'fsmonitor');
+  writeFileSync(
+    hook,
+    `#!/usr/bin/env python3\nimport os, subprocess\np = subprocess.Popen(['sleep', '60'], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\nwith open(${JSON.stringify(pids)}, 'a') as out: out.write(str(p.pid) + '\\n')\nos.write(1, b'token\\0/\\0')\n`,
+    { mode: 0o700 },
+  );
+  git('config', 'core.fsmonitor', hook);
+  const adapter = createGit(createSupervisor(join(root, 'supervision')));
+  const facts = await adapter.inspect('repository', 'inspect-fsmonitor');
+  assert.ok(existsSync(pids), 'real Git must invoke the configured fsmonitor');
+  const check = () => {
+    for (const line of readFileSync(pids, 'utf8').trim().split('\n'))
+      assert.throws(
+        () => process.kill(Number(line), 0),
+        { code: 'ESRCH' },
+        'metadata reads must not leave hook descendants alive',
+      );
+  };
+  check();
+  await adapter.validate(
+    { directory: repository, repository: facts.repository, ref: facts.ref },
+    'validate-fsmonitor',
+  );
+  check();
+});

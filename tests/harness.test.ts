@@ -205,7 +205,7 @@ test(
     await app.close();
     const messages = app.snapshot().state.sessions[0]!.messages;
     store.transaction((tx) => {
-      tx.state.operations[0]!.state = 'pending';
+      tx.state.operations.find((item) => item.kind === 'create-session')!.state = 'pending';
       tx.state.sessions[0]!.state = 'creating';
     });
     current = createHarness(deps);
@@ -547,9 +547,11 @@ test(
       startRef: lane.ref,
       track: false,
     };
-    const count = app.snapshot().state.operations.length;
+    const writes = () =>
+      app.snapshot().state.operations.filter((item) => item.kind !== 'inspect-repository').length;
+    const count = writes();
     await assert.rejects(app.createBranch(input));
-    assert.equal(app.snapshot().state.operations.length, count);
+    assert.equal(writes(), count);
     const created = await app.createBranch({ ...input, name: 'feature' });
     assert.equal(created.ref, 'refs/heads/feature');
     assert.deepEqual(await app.createBranch({ ...input, name: 'feature' }), created);
@@ -1318,3 +1320,117 @@ test(
     assert.equal(app.snapshot().state.lanes.find((item) => item.id === lane.id)!.state, 'ready');
   },
 );
+
+test(
+  'project inspections remain owned across concurrent adds and backend close waits for native hooks',
+  { timeout: 20000 },
+  async (t) => {
+    const { root, directory, app, store } = setup();
+    const release = join(root, 'release-metadata');
+    t.after(async () => {
+      writeFileSync(release, 'release');
+      await app.close();
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    });
+    const other = join(root, 'other-repository');
+    execFileSync('git', ['clone', directory, other], { stdio: 'pipe' });
+    const hook = join(root, 'metadata-hook');
+    const entered = join(root, 'metadata-entered');
+    writeFileSync(
+      hook,
+      `#!/usr/bin/env python3\nimport os,time\nopen(${JSON.stringify(entered)}, 'w').close()\nwhile not os.path.exists(${JSON.stringify(release)}): time.sleep(.01)\nos.write(1, b'token\\0/\\0')\n`,
+      { mode: 0o700 },
+    );
+    execFileSync('git', ['-C', directory, 'config', 'core.fsmonitor', hook]);
+    await app.initialize();
+    const first = app.addProject(directory);
+    await until(() => {
+      try {
+        readFileSync(entered);
+        return true;
+      } catch {
+        return false;
+      }
+    }, 'native fsmonitor entered');
+    const operation = app
+      .snapshot()
+      .state.operations.find(
+        (item) => item.kind === 'inspect-repository' && item.state === 'pending',
+      )!;
+    assert.ok(operation);
+    await app.addProject(other);
+    assert.equal(
+      app.snapshot().state.operations.find((item) => item.id === operation.id)!.state,
+      'pending',
+    );
+    await assert.rejects(app.addProject(directory), /being added/);
+    let closed = false;
+    const closing = app.close().then(() => {
+      closed = true;
+    });
+    await delay(50);
+    assert.equal(
+      closed,
+      false,
+      'close must retain store ownership until the accepted project check finishes',
+    );
+    writeFileSync(release, 'release');
+    await first;
+    await closing;
+    assert.equal(app.snapshot().state.projects.length, 2);
+    assert.equal(
+      app.snapshot().state.operations.find((item) => item.id === operation.id)!.state,
+      'completed',
+    );
+  },
+);
+
+test('unbound metadata recovery does not replay Git hooks and explicit add retries cleanup before inspecting', async (t) => {
+  const { root, directory, app, store, deps } = setup();
+  t.after(async () => {
+    await app.close();
+    store.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+  const recover = deps.supervisor.recover.bind(deps.supervisor);
+  let settled = false,
+    inspections = 0;
+  deps.supervisor.recover = async (id) =>
+    id === 'interrupted-metadata'
+      ? { settled, exitCode: null, reason: 'injected cleanup evidence' }
+      : recover(id);
+  const inspect = deps.git.inspect.bind(deps.git);
+  deps.git.inspect = async (...args) => {
+    inspections++;
+    return inspect(...args);
+  };
+  store.transaction((tx) =>
+    tx.state.operations.push({
+      id: 'interrupted-metadata',
+      laneId: null,
+      kind: 'inspect-repository',
+      target: directory,
+      state: 'pending',
+      error: null,
+      createdAt: 1,
+    }),
+  );
+  await app.initialize();
+  assert.equal(inspections, 0);
+  await assert.rejects(app.addProject(directory), /重试添加项目/);
+  assert.equal(inspections, 0);
+  settled = true;
+  const owner = await app.addProject(directory);
+  assert.equal(inspections, 1);
+  assert.equal(
+    app.snapshot().state.operations.find((item) => item.id === 'interrupted-metadata')!.state,
+    'failed',
+  );
+  // Registration and initial branch discovery can straddle a backend crash.
+  store.transaction((tx) => {
+    tx.state.lanes.length = 0;
+  });
+  await app.refreshProject(owner.id);
+  assert.equal(app.snapshot().state.lanes.length, 2);
+});

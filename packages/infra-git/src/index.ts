@@ -41,7 +41,7 @@ export function createGit(
     options: { worker?: boolean; onOutput?: (chunk: string) => void; timeout?: number } = {},
   ) {
     if (!supervisor) return git(directory, ...args);
-    if (!operationId) throw new Error('Git writes require a persisted operation ID');
+    if (!operationId) throw new Error('Git operations require a persisted operation ID');
     const child = supervisor.start({
       id: operationId,
       directory,
@@ -84,6 +84,27 @@ export function createGit(
     } finally {
       clearTimeout(timer);
     }
+  }
+  async function repositoryWorker(
+    action: string,
+    directory: string,
+    args: unknown[],
+    operationId?: string,
+  ) {
+    // Resolve caller-relative paths before the supervisor changes its cwd.
+    directory = resolve(directory);
+    if (typeof args[0] === 'string') args[0] = resolve(args[0]);
+    if (action === 'reconcileWorktree') args[2] = resolve(String(args[2]));
+    const output = await writeGit(
+      directory,
+      [
+        fileURLToPath(new URL('./repository-worker.ts', import.meta.url)),
+        JSON.stringify({ action, args }),
+      ],
+      operationId,
+      { worker: true },
+    );
+    return JSON.parse(output);
   }
   async function transaction(
     action: 'commit' | 'recover' | 'preview' | 'review',
@@ -169,7 +190,8 @@ export function createGit(
       );
       return JSON.parse(output);
     },
-    async inspect(input) {
+    async identify(input, operationId) {
+      if (supervisor) return repositoryWorker('identify', input, [input], operationId);
       const inputPath = await realpath(input);
       if ((await git(inputPath, 'rev-parse', '--is-bare-repository')).trim() === 'true')
         throw new Error('Bare repositories are not supported; select a checked-out worktree');
@@ -189,6 +211,11 @@ export function createGit(
           { cause },
         );
       }
+      return { repository, directory, ref, head };
+    },
+    async inspect(input, operationId) {
+      if (supervisor) return repositoryWorker('inspect', input, [input], operationId);
+      const { repository, directory, ref, head } = await this.identify(input);
       const [branches, entries, status, remoteRefs, remoteNames] = await Promise.all([
         git(
           directory,
@@ -241,8 +268,12 @@ export function createGit(
           }),
       };
     },
-    async validate(binding) {
-      const actual = await this.inspect(binding.directory);
+    async validate(binding, operationId) {
+      if (supervisor) {
+        await repositoryWorker('validate', binding.directory, [binding], operationId);
+        return;
+      }
+      const actual = await this.identify(binding.directory);
       if (
         actual.repository !== binding.repository ||
         actual.directory !== binding.directory ||
@@ -273,11 +304,24 @@ export function createGit(
       if ((await git(binding.directory, 'ls-files', '-u', '-z')).length)
         throw new Error('Resolve Git conflicts before running');
     },
-    async checkBranchName(directory, name) {
+    async checkBranchName(directory, name, operationId) {
+      if (supervisor) {
+        await repositoryWorker('checkBranchName', directory, [directory, name], operationId);
+        return;
+      }
       if (!name || name.startsWith('-')) throw new Error('Invalid branch name');
       await git(directory, 'check-ref-format', `refs/heads/${name}`);
     },
     async createBranch(directory, name, startRef, operationId, track = false) {
+      if (supervisor) {
+        await repositoryWorker(
+          'createBranch',
+          directory,
+          [directory, name, startRef, track],
+          operationId,
+        );
+        return;
+      }
       await this.checkBranchName(directory, name);
       if (
         !(track
@@ -303,7 +347,14 @@ export function createGit(
       if (!ref.startsWith('refs/heads/')) throw new Error('Expected a local branch');
       await writeGit(directory, ['worktree', 'add', '--', target, ref.slice(11)], operationId);
     },
-    async reconcileWorktree(repository, ref, target) {
+    async reconcileWorktree(repository, ref, target, operationId) {
+      if (supervisor)
+        return repositoryWorker(
+          'reconcileWorktree',
+          repository,
+          [repository, ref, target],
+          operationId,
+        );
       const entries = await worktrees(repository);
       const canonical = await realpath(target).catch((error) => {
         if (error.code === 'ENOENT') return resolve(target);
