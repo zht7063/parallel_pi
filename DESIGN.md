@@ -1,6 +1,6 @@
 # parallel_pi 设计方向
 
-状态：MVP v0.1 的三张静态 SVG 线框已获用户接受；没有应用 UI 实现或浏览器交互验证。
+状态：MVP v0.1 的三张静态 SVG 线框已获用户接受；应用骨架开始实施，完整地图与交互验收尚未完成。
 
 前端技术基线已确认：Vue 3 + TypeScript。分层与依赖规则见 [技术架构](docs/architecture.md)；地图组件库尚待实际需求验证，架构确认不表示线框视觉细节已冻结。
 
@@ -39,8 +39,28 @@
 | 选中/主操作 | `#315AA8` |
 | 选中底色 | `#EAF0FC` |
 
-字体暂用系统中文无衬线回退，建议技术标识最终使用等宽字。SVG 使用 1440×900 评审画布，不是固定窗口要求；尺寸、字体、颜色仍可修改。线框独立于运行时，没有应用 token 源；实施阶段建立唯一 token 文件和组件映射，不能把 SVG 内的值分别复制到各页面。
+字体暂用系统中文无衬线回退，建议技术标识最终使用等宽字。SVG 使用 1440×900 评审画布，不是固定窗口要求；尺寸、字体、颜色仍可修改。应用初始沿用已评审配色；运行时 token 的唯一入口是 `apps/web/src/style.css`，组件通过 CSS 变量消费，不复制字面颜色。
 
 ## 尚未确定的视觉细节
 
-本版已给出线框配色与布局提案；最终字体、间距、圆角、图标、动效和断点待评审。当前没有可复用 UI 组件；实施阶段建立统一映射，并按交互验收覆盖键盘、窄窗口、加载和错误状态。
+本版已给出线框配色与布局提案；最终字体、间距、圆角、图标、动效和断点待评审。当前已建立基础控件样式与连接状态；地图/会话共享组件随里程碑实施，并按交互验收覆盖键盘、窄窗口、加载和错误状态。
+
+## 运行时映射与 UI 归属
+
+本项目是简体中文本地开发工具，界面文案与辅助标签使用 zh-CN；技术标识保留原文。没有日本市场专属流程。视觉特征沿用分支轨道和 session 关系，不增加营销式视觉结构。现有行为契约为 `docs/mvp-spec.md`，不另建重复的 UX-CONTRACT。
+
+| 角色 | 唯一运行时入口 / 消费者 |
+| --- | --- |
+| 七项已评审配色 | `style.css` 的 background/surface/border/text/muted/primary/selected 变量；全局控件与各视图消费 |
+| 滚动条 | `style.css` 全局 scroll-thumb/track/hover/active；高对比模式采用系统颜色 |
+| 字体 | 根节点 system-ui + 中文回退；技术标识 ui-monospace；正文 15px / 1.6 |
+| 基础交互状态 | 全局 button、focus-visible、disabled 样式；不在各页面重复定义 |
+| 连接反馈 | `App.vue` 的状态区域与持久错误；重试按钮忙碌时禁用 |
+
+当前骨架仅实现连接状态，其他控件的归属随实际能力补充。选择器采用原生 select，接受系统弹层外观；地图浮层按规格为非模态。模态表单将采用共享 dialog 组件，行为跟随规格。
+
+### Canonical UI Map
+
+| Capability | Canonical owner | Source of truth | Allowed variants | Verification |
+| --- | --- | --- | --- | --- |
+| Scrollbar | apps/web/src/style.css | DESIGN.md 运行时映射 | 全局默认 / forced-colors 系统颜色 | tests/browser.spec.ts computed style 与窄窗口 |

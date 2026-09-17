@@ -1,0 +1,10 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["apps/web/src"],
+  "locale": "zh-CN",
+  "canonicalMap": "DESIGN.md",
+  "requiredCapabilities": ["Scrollbar"],
+  "requiredCommands": ["check", "build", "browser"],
+  "commands": {"check": "npm run check", "build": "npm run build", "browser": "npm run test:browser"},
+  "evidence": {"failurePaths": "tests/browser.spec.ts"}
+}

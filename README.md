@@ -2,8 +2,9 @@
 
 基于原版 pi 的本地单用户可视化 agent harness，按 Git 分支组织开发，以 session 地图呈现对话与思路分叉。
 
-当前已完成 MVP 设计基线，技术架构已确认，前端采用 Vue 3 + TypeScript，已完成 V01–V04 的 Linux 可控集成探针首轮，尚未开始应用开发。首版优先支持 Linux 和 macOS，手动检查上游更新；omp 支持暂缓。原版 pi 已通过 Git 子模块固定接入；RPC、工作区调度、配置和 MWF 路径已有运行证据；DeepSeek 真实模型验证已通过，macOS 验证按用户决定延后至 MVP 完成后在本地电脑进行，不能视为全量验收通过。
+当前已完成 MVP 设计基线，技术架构已确认，前端采用 Vue 3 + TypeScript，已完成 V01–V04 的 Linux 可控集成探针首轮，已进入 MVP 实施，M1 应用骨架已完成，下一阶段接入执行与恢复闭环。首版优先支持 Linux 和 macOS，手动检查上游更新；omp 支持暂缓。原版 pi 已通过 Git 子模块固定接入；RPC、工作区调度、配置和 MWF 路径已有运行证据；DeepSeek 真实模型验证已通过，macOS 验证按用户决定延后至 MVP 完成后在本地电脑进行，不能视为全量验收通过。
 
+- [实施里程碑](docs/milestones.md) · [本地开发与验证](docs/development.md)
 - [MVP 实施交接与遗留任务](docs/implementation-handoff.md)
 - [技术验证记录](docs/validation.md) · [运行探针](probes/README.md)
 - [已确认技术架构与验证计划](docs/architecture.md)
