@@ -88,3 +88,5 @@
 `SettingsDialog.vue` 复用 AppDialog、全局字段/按钮/反馈样式和既有颜色，不引入新的视觉 token。全局模型、凭据、执行名额分别保存；更新一类配置不自动接受另一类草稿的外部修改。错误就地显示、重新读取保留输入以便对照；API key 默认遮罩，组件关闭后清除，不写前端持久存储。移除凭据展示对象和影响；有未保存输入时关闭须明确放弃。证据入口为 `tests/settings.spec.ts`。
 
 工作区配置入口位于每个分支列，`ProjectSettingsDialog.vue` 显示实际 worktree 路径、原生信任判定与字段来源。默认模型、信任选择分别保存；修改一类不自动接受另一类的修订。`ModelPicker.vue` 复用原生 select 和共享请求客户端，按需查询原生目录，不自动替换当前选择。会话换模位于会话标题区，说明仅影响后续发送。未保存退出保护现在由 AppDialog 的 dirty 变体统一拥有，包含浏览器卸载提示和继续编辑焦点。视觉 token 保持原值；新增行为证据为 `tests/project-settings.spec.ts` 与 `tests/settings.spec.ts`。
+
+`ConnectionSettings.vue` 是设置面板内的自定义连接表单，继续消费现有样式和 token。连接独立读取/保存，不接受其他配置文件的修订；读取失败可就地重试，冲突重新读取保留输入，退出保护由父 AppDialog 统一处理。连接切换前保存或明确放弃草稿；移除显示 provider、模型与内联认证影响。地址中私密部分不回显，已有高级参数保留。浏览器证据为 `tests/connections.spec.ts`。

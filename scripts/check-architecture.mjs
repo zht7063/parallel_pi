@@ -105,6 +105,8 @@ export function checkArchitecture(root) {
               'core/session-manager.js',
               'core/auth-storage.js',
               'core/model-runtime.js',
+              'core/model-config.js',
+              'utils/json.js',
               'core/settings-manager.js',
               'core/trust-manager.js',
               'core/project-trust.js',

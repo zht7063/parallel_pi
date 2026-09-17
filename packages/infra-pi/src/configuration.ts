@@ -1,7 +1,10 @@
 import { createHmac, randomBytes } from 'node:crypto';
-import { readFileSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync, realpathSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { FileAuthStorageBackend } from '../../../vendor/pi/packages/coding-agent/dist/core/auth-storage.js';
+import { ModelConfig } from '../../../vendor/pi/packages/coding-agent/dist/core/model-config.js';
+import { stripJsonComments } from '../../../vendor/pi/packages/coding-agent/dist/utils/json.js';
 import { getAgentDir } from '../../../vendor/pi/packages/coding-agent/dist/config.js';
 import type { ConfigurationAccess } from '@parallel-pi/application';
 
@@ -16,11 +19,11 @@ function object(text: string): Record<string, unknown> {
   }
   throw new Error('Native configuration is invalid; repair the original file before saving');
 }
-function read(path: string): string {
+function read(path: string, fallback = '{}'): string {
   try {
     return readFileSync(path, 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '{}';
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return fallback;
     throw new Error('Cannot read native configuration');
   }
 }
@@ -28,6 +31,8 @@ export function createConfigurationAccess(agentDirectory = getAgentDir()): Confi
   agentDirectory = resolve(agentDirectory);
   const settings = join(agentDirectory, 'settings.json');
   const auth = join(agentDirectory, 'auth.json');
+  const modelsPath = join(agentDirectory, 'models.json');
+  const emptyModels = '{"providers":{}}';
   const trustPath = join(agentDirectory, 'trust.json');
   // Opaque, process-local revisions do not expose hashes of potentially weak secrets.
   // Restart deliberately invalidates an open edit form.
@@ -38,11 +43,13 @@ export function createConfigurationAccess(agentDirectory = getAgentDir()): Confi
     path: string,
     expected: string,
     change: (value: Record<string, unknown>) => void,
+    parse = object,
+    initial = '{}',
   ) {
     try {
       mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
       try {
-        writeFileSync(path, '{}', { flag: 'wx', mode: 0o600 });
+        writeFileSync(path, initial, { flag: 'wx', mode: 0o600 });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       }
@@ -50,10 +57,10 @@ export function createConfigurationAccess(agentDirectory = getAgentDir()): Confi
       // This native backend acquires the same proper-lockfile lock BEFORE reading,
       // including first creation. FileSettingsStorage reads a missing file before locking.
       new FileAuthStorageBackend(path).withLock((current) => {
-        const text = current ?? '{}';
+        const text = current ?? initial;
         if (revision(path, text) !== expected)
           throw new Error('Configuration changed; reload and compare before saving');
-        const value = object(text);
+        const value = parse(text);
         change(value);
         return { result: undefined, next: JSON.stringify(value, null, 2) + '\n' };
       });
@@ -88,7 +95,111 @@ export function createConfigurationAccess(agentDirectory = getAgentDir()): Confi
       throw new Error('Native configuration is invalid; repair the trust file before saving');
     return value;
   }
+  const parseModels = (text: string) => object(stripJsonComments(text.replace(/^\uFEFF/, '')));
+  // ModelConfig only accepts paths. Validate a private immutable snapshot so an
+  // external edit cannot make validation refer to different bytes than the revision.
+  async function validateModels(text: string) {
+    const directory = mkdtempSync(join(tmpdir(), 'parallel-model-config-'));
+    try {
+      const path = join(directory, 'models.json');
+      writeFileSync(path, text, { mode: 0o600 });
+      const config = await ModelConfig.load(path);
+      if (config.getError())
+        throw new Error('Native configuration is invalid; repair models.json before saving');
+      return config;
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+  function publicUrl(value: string | undefined): string | undefined {
+    if (!value) return undefined;
+    try {
+      const url = new URL(value);
+      if (
+        ['http:', 'https:'].includes(url.protocol) &&
+        !url.username &&
+        !url.password &&
+        !url.search &&
+        !url.hash
+      )
+        return value;
+    } catch {
+      /* Native values that cannot be displayed safely stay private. */
+    }
+    return undefined;
+  }
   return {
+    async connections() {
+      const text = read(modelsPath, emptyModels);
+      const config = await validateModels(text);
+      return {
+        revision: revision(modelsPath, text),
+        providers: config.getProviderIds().map((provider) => {
+          const value = config.getProvider(provider)!;
+          const baseUrl = publicUrl(value.baseUrl);
+          return {
+            provider,
+            baseUrl,
+            hiddenBaseUrl: Boolean(value.baseUrl && !baseUrl),
+            api: value.api,
+            hasInlineCredential: Boolean(value.apiKey || value.headers || value.oauth),
+            models: (value.models ?? []).map((model) => ({
+              id: model.id,
+              images: model.input?.includes('image') ?? false,
+            })),
+          };
+        }),
+      };
+    },
+    async connection(expected, change) {
+      const text = read(modelsPath, emptyModels);
+      if (revision(modelsPath, text) !== expected)
+        throw new Error('Configuration changed; reload and compare before saving');
+      const config = await validateModels(text);
+      const value = parseModels(text);
+      const providers = value.providers as Record<string, Record<string, unknown>>;
+      const existing = config.getProvider(change.provider);
+      if (change.remove) delete providers[change.provider];
+      else {
+        if (!existing && (!change.baseUrl || !change.api || !change.model))
+          throw new Error('A new connection requires a base URL, API family and model ID');
+        const provider = Object.hasOwn(providers, change.provider)
+          ? providers[change.provider]!
+          : {};
+        if (change.baseUrl) provider.baseUrl = change.baseUrl;
+        if (change.api) provider.api = change.api;
+        if (change.model) {
+          const models = (provider.models ?? []) as Record<string, unknown>[];
+          const matching = models.filter((model) => model.id === change.model!.id);
+          if (matching.length > 1)
+            throw new Error(
+              'Native configuration is invalid; duplicate model IDs must be repaired before editing',
+            );
+          const model = matching[0] ?? { id: change.model.id };
+          model.input = change.model.images ? ['text', 'image'] : ['text'];
+          if (!matching.length) models.push(model);
+          provider.models = models;
+        }
+        Object.defineProperty(providers, change.provider, {
+          value: provider,
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        });
+      }
+      await validateModels(JSON.stringify(value));
+      // Both awaits above are outside the synchronous native lock. Recheck the
+      // exact original revision inside it before publishing the validated value.
+      update(
+        modelsPath,
+        expected,
+        (current) => {
+          current.providers = providers;
+        },
+        parseModels,
+        emptyModels,
+      );
+    },
     project(directory) {
       const canonical = realpathSync(directory);
       const path = join(canonical, '.pi/settings.json');

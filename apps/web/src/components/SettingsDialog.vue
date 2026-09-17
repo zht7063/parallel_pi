@@ -4,6 +4,9 @@ import type { ConfigurationSnapshot } from '@parallel-pi/contracts';
 import type { WorkspaceClient } from '../workspace.ts';
 import AppDialog from './AppDialog.vue';
 import ModelPicker from './ModelPicker.vue';
+import ConnectionSettings from './ConnectionSettings.vue';
+const connectionsDirty = ref(false),
+  connectionsBusy = ref(false);
 const props = defineProps<{ client: WorkspaceClient; concurrency: number }>();
 const emit = defineEmits<{ close: [] }>();
 const view = ref<ConfigurationSnapshot | null>(null);
@@ -139,7 +142,12 @@ onBeforeUnmount(() => {
 });
 </script>
 <template>
-  <AppDialog title="设置" :blocked="busy" :dirty="dirty" @close="emit('close')">
+  <AppDialog
+    title="设置"
+    :blocked="busy || connectionsBusy"
+    :dirty="dirty || connectionsDirty"
+    @close="emit('close')"
+  >
     <div class="settings-feedback">
       <p id="settings-error" class="form-error" role="alert">{{ error }}</p>
       <p role="status">{{ loading ? '正在读取本机配置…' : notice }}</p>
@@ -198,6 +206,12 @@ onBeforeUnmount(() => {
         />
         <button type="submit" :disabled="busy" :aria-busy="busy">保存全局默认模型</button>
       </form>
+      <ConnectionSettings
+        :client="client"
+        :disabled="busy"
+        @dirty="connectionsDirty = $event"
+        @busy="connectionsBusy = $event"
+      />
       <section class="settings-section" aria-labelledby="credentials-title">
         <h3 id="credentials-title">Provider 凭据</h3>
         <p class="hint">沿用本机 pi 认证配置。只显示类型，不回显已有密钥。</p>

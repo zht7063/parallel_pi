@@ -73,6 +73,11 @@ export function createHttpServer(
           error: { code: 'SESSION', message: 'Reconnect to the local application' },
         });
       }
+      if (configuration && url.pathname === '/api/connections') {
+        if (request.method === 'GET') return json(response, 200, await configuration.connections());
+        if (request.method === 'POST')
+          return json(response, 200, await configuration.updateConnection(await body(request)));
+      }
       if (configuration && url.pathname === '/api/models' && request.method === 'GET')
         return json(response, 200, await configuration.models());
       if (configuration && url.pathname === '/api/configuration') {

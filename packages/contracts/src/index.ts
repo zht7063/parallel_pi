@@ -143,3 +143,15 @@ export interface CatalogModel {
   images: boolean;
   available: boolean;
 }
+
+export interface ConnectionsSnapshot {
+  revision: string;
+  providers: {
+    provider: string;
+    baseUrl?: string;
+    hiddenBaseUrl: boolean;
+    api?: string;
+    hasInlineCredential: boolean;
+    models: { id: string; images: boolean }[];
+  }[];
+}

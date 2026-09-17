@@ -398,3 +398,131 @@ test(
     await assert.rejects(catalog.list(), /shutting down/);
   },
 );
+
+test('connection editing validates native JSONC, preserves private fields and rejects conflicting writes', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'parallel-connections-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const agent = join(root, 'agent');
+  const app = createConfiguration(createConfigurationAccess(agent));
+  const first = await app.connections();
+  assert.deepEqual(first.providers, []);
+  assert.equal(existsSync(agent), false);
+  const request = {
+    revision: first.revision,
+    provider: 'custom',
+    remove: false,
+    baseUrl: 'http://127.0.0.1:9/v1',
+    api: 'openai-completions',
+    model: { id: 'vision', images: true },
+  };
+  const created = await app.updateConnection(request);
+  assert.equal(created.providers[0]?.baseUrl, request.baseUrl);
+  assert.deepEqual(created.providers[0]?.models, [{ id: 'vision', images: true }]);
+  const path = join(agent, 'models.json');
+  assert.equal(statSync(path).mode & 0o777, 0o600);
+  await assert.rejects(app.updateConnection(request), /changed; reload/);
+  const marker = join(root, 'never-execute');
+  const stored = {
+    extra: { preserve: true },
+    providers: {
+      custom: {
+        baseUrl: 'https://private-user:private-password@example.test/v1?private-query',
+        api: 'openai-completions',
+        apiKey: `!touch ${marker}`,
+        headers: { Authorization: 'private-header' },
+        compat: { supportsDeveloperRole: false },
+        extra: ['unknown'],
+        models: [
+          {
+            id: 'vision',
+            input: ['text', 'image'],
+            contextWindow: 8192,
+            maxTokens: 1024,
+            extra: 'keep',
+            headers: { authorization: 'private-model-header' },
+          },
+          { id: 'untouched', input: ['text'] },
+        ],
+        modelOverrides: { untouched: { contextWindow: 4096 } },
+      },
+      another: { baseUrl: 'http://localhost:9', apiKey: 'private-other' },
+    },
+  };
+  writeFileSync(path, '\uFEFF// native JSONC\n' + JSON.stringify(stored).replace(/}$/, ',}'));
+  const metadata = await app.connections();
+  assert.doesNotMatch(JSON.stringify(metadata), /private-|!touch |never-execute/);
+  assert.equal(metadata.providers[0]?.hiddenBaseUrl, true);
+  assert.equal(metadata.providers[0]?.hasInlineCredential, true);
+  const updated = await app.updateConnection({
+    revision: metadata.revision,
+    provider: 'custom',
+    remove: false,
+    model: { id: 'vision', images: false },
+  });
+  const expected = structuredClone(stored);
+  expected.providers.custom.models[0]!.input = ['text'];
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), expected);
+  assert.equal(
+    existsSync(marker),
+    false,
+    'metadata and schema validation never resolve credential commands',
+  );
+  const next = {
+    revision: updated.revision,
+    provider: 'custom',
+    remove: false,
+    baseUrl: 'https://example.test/v2',
+  };
+  const concurrent = await Promise.allSettled([
+    app.updateConnection(next),
+    app.updateConnection({ ...next, baseUrl: 'https://example.test/v3' }),
+  ]);
+  assert.equal(concurrent.filter((item) => item.status === 'fulfilled').length, 1);
+  const rejected = concurrent.find((item) => item.status === 'rejected');
+  assert.ok(rejected?.status === 'rejected');
+  assert.match(String(rejected.reason), /changed; reload/);
+  const revision = (await app.connections()).revision;
+  for (const baseUrl of [
+    'javascript:alert(1)',
+    'https://user:pass@example.test',
+    'https://example.test?key=private',
+    'https://example.test/#key',
+    'https://example.test/\n',
+  ]) {
+    await assert.rejects(app.updateConnection({ ...next, revision, baseUrl }), /URL/);
+  }
+  await assert.rejects(
+    app.updateConnection({ ...next, revision, provider: '__proto__' }),
+    /provider ID/,
+  );
+  await assert.rejects(
+    app.updateConnection({ ...next, revision, api: 'unknown-api' }),
+    /API family/,
+  );
+  const beforeDelete = JSON.parse(readFileSync(path, 'utf8'));
+  const removed = await app.updateConnection({ revision, provider: 'custom', remove: true });
+  assert.equal(
+    removed.providers.some((item) => item.provider === 'custom'),
+    false,
+  );
+  assert.deepEqual(
+    JSON.parse(readFileSync(path, 'utf8')).providers.another,
+    beforeDelete.providers.another,
+  );
+  for (const damaged of [
+    '{private-parser-secret',
+    '{"providers":{"broken":{"models":[{"id":7}]}}}',
+  ]) {
+    writeFileSync(path, damaged);
+    await assert.rejects(
+      app.connections(),
+      (error) =>
+        error instanceof Error &&
+        /Native configuration is invalid/.test(error.message) &&
+        !error.message.includes('private-parser-secret'),
+    );
+    await assert.rejects(app.updateConnection({ ...request, revision: removed.revision }));
+    assert.equal(readFileSync(path, 'utf8'), damaged);
+    assert.doesNotThrow(() => app.read(), 'broken models do not prevent credential repair');
+  }
+});

@@ -48,6 +48,8 @@ export type { MemoryInput, MemoryReceipt, MemoryAccess, MemorySave } from './por
 export { createConfiguration } from './configuration.ts';
 export type {
   ModelCatalog,
+  ConnectionsView,
+  ConnectionChange,
   Configuration,
   ConfigurationAccess,
   ConfigurationView,
