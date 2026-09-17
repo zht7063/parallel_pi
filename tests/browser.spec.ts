@@ -498,9 +498,11 @@ test('unresolved project inspection stays visible after reload and retries throu
   }
 });
 
-test('native select, confirmation details and editor prefill survive browser reload on the same run', async ({
+test('native questions survive reload and closing the page preserves background work and drafts', async ({
   page,
+  context,
 }) => {
+  test.setTimeout(45000);
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
@@ -582,6 +584,42 @@ test('native select, confirmation details and editor prefill survive browser rel
     await expect(page.getByRole('region', { name: '运行通知' })).toContainText(
       '"choice":"继续","confirmed":false,"edited":"修改后的第一行\\n修改后的第二行"',
     );
+    await page.getByLabel('消息', { exact: true }).fill('probe-question-tool');
+    await page.getByRole('button', { name: '发送', exact: true }).click();
+    await expect(page.getByText('Continue probe tool?', { exact: true })).toBeVisible();
+    await page.getByLabel('消息', { exact: true }).fill('关闭网页后保留的草稿');
+    await expect
+      .poll(() => backend.app.snapshot().state.drafts.at(-1)?.text)
+      .toBe('关闭网页后保留的草稿');
+    const background = backend.app
+      .snapshot()
+      .state.runs.find((run) => run.state === 'waiting_input')!;
+    const url = page.url();
+    await page.close();
+    expect(context.pages()).toHaveLength(0);
+    expect(backend.app.snapshot().state.runs.find((run) => run.id === background.id)!.state).toBe(
+      'waiting_input',
+    );
+    // Answer through the application while no browser page exists: the real bash tool and
+    // native session must finish independently of the disconnected frontend.
+    backend.app.answer(background.id, background.question!.id, 'continue');
+    await expect
+      .poll(
+        () => backend.app.snapshot().state.runs.find((run) => run.id === background.id)!.state,
+        {
+          timeout: 15000,
+        },
+      )
+      .toBe('succeeded');
+    page = await context.newPage();
+    await page.goto(url);
+    await expect(page.getByRole('heading', { name: '结构化提问', exact: true })).toBeVisible();
+    await expect(page.getByLabel('消息', { exact: true })).toHaveValue('关闭网页后保留的草稿');
+    await expect(
+      page.locator('.message.user').filter({ hasText: 'probe-question-tool' }),
+    ).toHaveCount(1);
+    await expect(page.locator('.run-row strong').first()).toHaveText('执行完成');
+    expect(backend.app.snapshot().state.runs.map((run) => run.id)).toEqual([runId, background.id]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
