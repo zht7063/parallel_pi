@@ -66,3 +66,5 @@ export type {
 } from './ports.ts';
 
 export type { GitFileChange, GitChangesView } from './ports.ts';
+
+export type { GitCommitResult, GitHookEvent } from './ports.ts';

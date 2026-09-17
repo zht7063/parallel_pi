@@ -1,9 +1,16 @@
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { inspectGitChanges } from './changes.ts';
 import { git, pathLine, safeError } from './command.ts';
 import { realpath, access } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { WorkspaceAccess, RepositoryFacts, ProcessSupervisor } from '@parallel-pi/application';
+import type {
+  WorkspaceAccess,
+  RepositoryFacts,
+  ProcessSupervisor,
+  GitCommitResult,
+  GitHookEvent,
+} from '@parallel-pi/application';
 
 async function worktrees(directory: string): Promise<RepositoryFacts['worktrees']> {
   const raw = await git(directory, 'worktree', 'list', '--porcelain', '-z');
@@ -22,22 +29,37 @@ async function worktrees(directory: string): Promise<RepositoryFacts['worktrees'
   }
   return result;
 }
-export function createGit(supervisor?: ProcessSupervisor): WorkspaceAccess {
-  async function writeGit(directory: string, args: string[], operationId?: string, worker = false) {
+export function createGit(
+  supervisor?: ProcessSupervisor,
+  commitDirectory?: string,
+): WorkspaceAccess {
+  async function writeGit(
+    directory: string,
+    args: string[],
+    operationId?: string,
+    options: { worker?: boolean; onOutput?: (chunk: string) => void; timeout?: number } = {},
+  ) {
     if (!supervisor) return git(directory, ...args);
     if (!operationId) throw new Error('Git writes require a persisted operation ID');
     const child = supervisor.start({
       id: operationId,
       directory,
-      command: worker ? process.execPath : 'git',
-      args: worker ? args : ['-C', directory, ...args],
+      command: options.worker ? process.execPath : 'git',
+      args: options.worker ? args : ['-C', directory, ...args],
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
     });
     let output = '',
       error = '',
       exceeded = false,
       timedOut = false;
+    let listenerFailure: unknown;
     child.onOutput((chunk) => {
+      try {
+        options.onOutput?.(chunk);
+      } catch (cause) {
+        listenerFailure = cause;
+        void child.stop();
+      }
       if (output.length + chunk.length > 16 * 1024 * 1024) {
         exceeded = true;
         void child.stop();
@@ -49,10 +71,11 @@ export function createGit(supervisor?: ProcessSupervisor): WorkspaceAccess {
     const timer = setTimeout(() => {
       timedOut = true;
       void child.stop();
-    }, 30000);
+    }, options.timeout ?? 30000);
     try {
       const proof = await child.completion;
       if (!proof.settled) throw new Error(proof.reason);
+      if (listenerFailure) throw listenerFailure;
       if (exceeded || timedOut)
         throw new Error(exceeded ? 'Git output exceeded its limit' : 'Git operation timed out');
       if (proof.exitCode !== 0) throw new Error(safeError(error || 'Git operation failed'));
@@ -61,14 +84,67 @@ export function createGit(supervisor?: ProcessSupervisor): WorkspaceAccess {
       clearTimeout(timer);
     }
   }
+  async function transaction(
+    action: 'commit' | 'recover',
+    input: { directory: string; operationId: string; jobId: string },
+    progress?: (event: GitHookEvent) => void,
+  ) {
+    if (!supervisor || !commitDirectory)
+      throw new Error('Supervised Git transaction storage is required');
+    if (![input.operationId, input.jobId].every((id) => /^[a-zA-Z0-9_-]{1,128}$/.test(id)))
+      throw new Error('Invalid Git operation ID');
+    mkdirSync(commitDirectory, { recursive: true, mode: 0o700 });
+    const path = join(commitDirectory, input.operationId + '.json');
+    writeFileSync(path, JSON.stringify(input), { flag: 'wx', mode: 0o600 });
+    let buffer = '',
+      result: GitCommitResult | undefined;
+    try {
+      await writeGit(
+        input.directory,
+        [
+          fileURLToPath(new URL('./commit-worker.ts', import.meta.url)),
+          action,
+          join(commitDirectory, input.jobId),
+          path,
+        ],
+        input.operationId,
+        {
+          worker: true,
+          timeout: action === 'commit' ? 300000 : 30000,
+          onOutput(chunk) {
+            buffer += chunk;
+            let end: number;
+            while ((end = buffer.indexOf('\n')) >= 0) {
+              const line = buffer.slice(0, end);
+              buffer = buffer.slice(end + 1);
+              const event = JSON.parse(line);
+              if (event.type === 'hook') progress?.(event.event);
+              if (event.type === 'result') result = event.result;
+            }
+          },
+        },
+      );
+      if (!result || !['committed', 'failed', 'uncertain'].includes(result.state))
+        throw new Error('Invalid Git transaction result');
+      return result;
+    } finally {
+      rmSync(path, { force: true });
+    }
+  }
   return {
+    commitFiles(input, progress) {
+      return transaction('commit', input, progress);
+    },
+    recoverCommit(input) {
+      return transaction('recover', input);
+    },
     async inspectChanges(directory, operationId) {
       if (!supervisor) return inspectGitChanges(directory);
       const output = await writeGit(
         directory,
         [fileURLToPath(new URL('./changes-worker.ts', import.meta.url))],
         operationId,
-        true,
+        { worker: true },
       );
       return JSON.parse(output);
     },
@@ -232,3 +308,6 @@ export function createGit(supervisor?: ProcessSupervisor): WorkspaceAccess {
 }
 
 export { inspectGitChanges } from './changes.ts';
+
+export { commitGitFiles, recoverGitCommit, previewGitCommit } from './commit.ts';
+export type { GitCommitRequest } from './commit.ts';

@@ -148,5 +148,11 @@ export async function inspectGitChanges(input: string): Promise<GitChangesView> 
   const after = await capture(directory);
   if (before.revision !== after.revision)
     throw new Error('Git changes moved while previewing; reload before selecting files');
-  return { directory, ...before };
+  // Conversion filters/configuration can change the displayed patch without
+  // changing raw worktree bytes. Bind the revision to what the user saw too.
+  const revision = createHash('sha256')
+    .update(before.revision)
+    .update(JSON.stringify(before.files))
+    .digest('hex');
+  return { directory, ...before, revision };
 }

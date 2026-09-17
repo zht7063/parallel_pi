@@ -88,7 +88,34 @@ export interface RepositoryFacts {
   remoteBranches: { ref: string; name: string; remote: string; head: string }[];
   worktrees: { directory: string; ref: string | null; head: string; locked: boolean }[];
 }
+export interface GitCommitResult {
+  state: 'committed' | 'failed' | 'uncertain';
+  commit: string | null;
+  error: string | null;
+}
+export interface GitHookEvent {
+  name: string;
+  phase: 'started' | 'finished';
+  exitCode?: number | null;
+}
 export interface WorkspaceAccess {
+  commitFiles(
+    input: {
+      directory: string;
+      operationId: string;
+      jobId: string;
+      tree: string;
+      revision: string;
+      paths: string[];
+      message: string;
+    },
+    progress: (event: GitHookEvent) => void,
+  ): Promise<GitCommitResult>;
+  recoverCommit(input: {
+    directory: string;
+    operationId: string;
+    jobId: string;
+  }): Promise<GitCommitResult>;
   inspectChanges(directory: string, operationId: string): Promise<GitChangesView>;
   inspect(directory: string): Promise<RepositoryFacts>;
   validate(binding: { repository: string; ref: string; directory: string }): Promise<void>;

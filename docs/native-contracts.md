@@ -46,3 +46,9 @@ MWF 锁内修订包装器已在 M4c 接入，内部入口与应用证据见下�
 固定版 `pi-mcp-adapter` 2.32.1 已是 infra-mwf 运行时依赖。通过公开 `MCP_RUNTIME_REGISTER_EVENT` / `MCP_RUNTIME_REGISTER_VERSION` 复用已有 adapter，注册当前根目录的 `parallel_mwf` 服务；没有 adapter 时用 `createMcpAdapter` 安装应用实例。服务调用原生 MWF MCP CLI，跨根请求由原生 `ROOT_NOT_ALLOWED` 拒绝。已有用户 MCP 配置与工具保留；注册冲突显示错误，不覆盖同名服务。原生工具写入失败遵循原生 tool result；应用显式关键保存的持久化待办与暂停机制仍由 M4c 负责。
 
 配置检查加载资源后显式结束 worker，由现有监督器收束扩展启动的 MCP 子进程后才释放维护名额。可见原生 custom message 通过 RPC notice 进入应用事件记录与会话通知，刷新后可恢复。升级契约新增 `tests/memory-agent.test.ts` 和 `tests/memory.spec.ts`，前者使用受控 provider 驱动真实 pi/MWF/MCP，并非外部模型质量验证。
+
+### Git 提交事务基础（M4e2，应用入口待接入）
+
+`infra-git` 增加实际提交树预览及受监督 commit/recover worker。原生 `--only`、私有 `GIT_INDEX_FILE`、`--pathspec-from-file`/NUL 路径和 `reference-transaction` 是新契约；当前在 Git 2.43.0 验证。临时钩子启动器不改写原钩子，调用原钩子时恢复原先的 `GIT_CONFIG_PARAMETERS`，使其内部 Git 命令继续读取原配置。原生消息钩子可以规范提交消息，树守卫只允许批准的文件内容。
+
+调用方须先核验旧 worker 已收束，才能对账本地事务目录并修复 index；恢复不重放钩子。外部 index/branch 变化或未知锁归属返回 uncertain，不能自动覆盖。具体测试及尚未接入的应用任务/UI 边界见 `evidence/m4-git-commit-core.md`。Git 预览修订现在同时绑定原始状态和实际显示的 diff；选择后的提交预览另绑定原生过滤后的树。
