@@ -11,7 +11,9 @@ const props = defineProps<{
   client: WorkspaceClient;
   drafts: DraftManager;
 }>();
-const emit = defineEmits<{ back: [] }>();
+const emit = defineEmits<{
+  fork: [message: WorkspaceSnapshot['sessions'][number]['messages'][number]];
+}>();
 const runs = computed(
   () => props.client.snapshot.value?.runs.filter((run) => run.sessionId === props.session.id) ?? [],
 );
@@ -37,6 +39,17 @@ const occupied = computed(
       (run) => run.laneId === props.lane.id && (isActive(run.state) || run.state === 'queued'),
     ) ?? false,
 );
+const branchRuns = computed(
+  () => props.client.snapshot.value?.runs.filter((run) => run.laneId === props.lane.id) ?? [],
+);
+const otherActive = computed(() =>
+  branchRuns.value.find((run) => run.sessionId !== props.session.id && isActive(run.state)),
+);
+function queuePosition(id: string) {
+  return (
+    branchRuns.value.filter((run) => run.state === 'queued').findIndex((run) => run.id === id) + 1
+  );
+}
 const activity = ref<RunActivity[]>([]),
   cursor = ref(0),
   runId = ref(''),
@@ -45,11 +58,99 @@ const activity = ref<RunActivity[]>([]),
   answer = ref('');
 const messages = ref<HTMLElement | null>(null),
   follow = ref(true);
+const historyLimit = ref(40),
+  historyBusy = ref(false),
+  historyError = ref('');
+const visibleMessages = ref(props.session.messages);
+const scrollKey = `parallel_pi.conversation.${props.session.id}`;
+let savedTop: number | null = null,
+  restoringHistory = true;
+let historyRequest: AbortController | null = null;
+let pendingPrepend = false;
+try {
+  const saved = JSON.parse(sessionStorage.getItem(scrollKey) ?? '{}');
+  if (Number.isFinite(saved.top)) savedTop = Math.max(0, saved.top);
+  if (typeof saved.follow === 'boolean') follow.value = saved.follow;
+  if (Number.isSafeInteger(saved.limit)) historyLimit.value = Math.max(40, saved.limit);
+  if (!follow.value && Number.isSafeInteger(saved.count))
+    historyLimit.value += Math.max(0, props.session.messageCount - saved.count);
+} catch {}
+function saveScroll() {
+  if (!messages.value || restoringHistory) return;
+  try {
+    sessionStorage.setItem(
+      scrollKey,
+      JSON.stringify({
+        top: messages.value.scrollTop,
+        follow: follow.value,
+        limit: historyLimit.value,
+        count: props.session.messageCount,
+      }),
+    );
+  } catch {}
+}
+async function loadHistory(prepend = pendingPrepend) {
+  pendingPrepend = prepend;
+  historyRequest?.abort();
+  const controller = new AbortController();
+  historyRequest = controller;
+  historyBusy.value = true;
+  historyError.value = '';
+  const el = messages.value,
+    oldHeight = el?.scrollHeight ?? 0,
+    oldTop = el?.scrollTop ?? 0;
+  const anchorElement = [...(el?.querySelectorAll<HTMLElement>('.message') ?? [])].find(
+    (item) => item.getBoundingClientRect().bottom > (el?.getBoundingClientRect().top ?? 0),
+  );
+  const anchor = anchorElement
+    ? {
+        id: anchorElement.dataset.entry!,
+        top: anchorElement.getBoundingClientRect().top - el!.getBoundingClientRect().top,
+      }
+    : null;
+  try {
+    let page = await props.client.history(props.session.id, undefined, controller.signal);
+    let loaded = page.messages;
+    while (page.more && loaded.length < historyLimit.value && loaded[0]) {
+      page = await props.client.history(props.session.id, loaded[0].id, controller.signal);
+      loaded = [...page.messages, ...loaded];
+    }
+    if (controller.signal.aborted || disposed) return;
+    visibleMessages.value = loaded;
+    await nextTick();
+    const target = messages.value;
+    if (target) {
+      if (restoringHistory && savedTop !== null && !follow.value) target.scrollTop = savedTop;
+      else if ((prepend || !follow.value) && anchor) {
+        const item = target.querySelector<HTMLElement>(`[data-entry="${CSS.escape(anchor.id)}"]`);
+        if (item)
+          target.scrollTop +=
+            item.getBoundingClientRect().top - target.getBoundingClientRect().top - anchor.top;
+      } else if (prepend) target.scrollTop = oldTop + target.scrollHeight - oldHeight;
+      else if (follow.value) target.scrollTop = target.scrollHeight;
+      else target.scrollTop = oldTop;
+    }
+    pendingPrepend = false;
+    restoringHistory = false;
+    saveScroll();
+  } catch (cause) {
+    if (!controller.signal.aborted)
+      historyError.value = cause instanceof Error ? cause.message : '历史读取失败';
+  } finally {
+    if (historyRequest === controller) historyBusy.value = false;
+  }
+}
+async function earlier() {
+  historyLimit.value += 40;
+  await loadHistory(true);
+}
 let activityRequest: AbortController | null = null;
 let disposed = false;
 onBeforeUnmount(() => {
+  saveScroll();
   disposed = true;
   activityRequest?.abort();
+  historyRequest?.abort();
 });
 let fetching = false,
   reload = false;
@@ -108,6 +209,15 @@ async function loadActivity() {
   }
 }
 watch(
+  () => props.session.messageCount,
+  (count, previous) => {
+    if (previous !== undefined && !follow.value)
+      historyLimit.value += Math.max(0, count - previous);
+    void loadHistory();
+  },
+  { immediate: true },
+);
+watch(
   () => [props.session.id, props.client.snapshot.value?.cursor],
   () => {
     void loadActivity();
@@ -121,8 +231,10 @@ watch(
   },
 );
 function scrolled() {
+  if (restoringHistory) return;
   const el = messages.value;
   if (el) follow.value = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+  saveScroll();
 }
 async function command(input: unknown) {
   if (busy.value) return;
@@ -149,9 +261,8 @@ function reply(value: string | boolean | null) {
 <template>
   <section class="conversation" :aria-label="`会话 ${session.title}`">
     <div class="conversation-heading">
-      <button type="button" @click="emit('back')">← 返回全局地图</button>
       <div>
-        <h2>{{ session.title }}</h2>
+        <h2 tabindex="-1">{{ session.title }}</h2>
         <span class="hint mono"
           >{{ lane.ref.replace('refs/heads/', '') }} · {{ session.model.provider }} /
           {{ session.model.model }}</span
@@ -168,6 +279,15 @@ function reply(value: string | boolean | null) {
       aria-label="会话历史和运行记录"
       @scroll="scrolled"
     >
+      <p v-if="otherActive" class="branch-occupancy hint">
+        当前分支由“{{
+          client.snapshot.value?.sessions.find((item) => item.id === otherActive?.sessionId)?.title
+        }}”占用（{{ stateLabel[otherActive.state] }}）。可以继续编辑，新消息将加入队列。
+      </p>
+      <p class="history-status hint" role="status">{{ historyBusy ? '正在读取历史…' : '' }}</p>
+      <div v-if="historyError" class="error" role="alert">
+        {{ historyError }} <button type="button" @click="loadHistory()">重试读取历史</button>
+      </div>
       <div v-if="lane.state !== 'ready'" class="warning">
         <span>{{ stateLabel[lane.state] }}：{{ lane.reason }}</span
         ><button
@@ -232,9 +352,18 @@ function reply(value: string | boolean | null) {
         <h3>从这条分支开始</h3>
         <p>描述要完成的工作。会话使用当前工作区，已有修改会保留。</p>
       </div>
+      <button
+        v-if="session.messageCount > visibleMessages.length"
+        type="button"
+        :disabled="historyBusy"
+        @click="earlier"
+      >
+        加载更早消息（还有 {{ session.messageCount - visibleMessages.length }} 条）
+      </button>
       <article
-        v-for="message in session.messages"
+        v-for="message in visibleMessages"
         :key="message.id"
+        :data-entry="message.id"
         class="message"
         :class="message.role"
       >
@@ -260,6 +389,16 @@ function reply(value: string | boolean | null) {
               height="180"
           /></a>
         </div>
+        <button
+          v-if="message.forkable"
+          type="button"
+          :disabled="
+            occupied || lane.state === 'recovering' || client.connection.value !== 'connected'
+          "
+          @click="emit('fork', message)"
+        >
+          从此处分叉
+        </button>
       </article>
       <section v-if="current" class="live-run" aria-label="当前执行">
         <h3>{{ stateLabel[current.state] }}</h3>
@@ -315,6 +454,9 @@ function reply(value: string | boolean | null) {
             <strong>{{ stateLabel[run.state] }}</strong
             ><span class="hint mono">{{ run.model.provider }} / {{ run.model.model }}</span>
             <p>{{ run.text.slice(0, 180) || '图片消息' }}</p>
+            <p v-if="run.state === 'queued'" class="hint">
+              该分支等待序列第 {{ queuePosition(run.id) }} 项
+            </p>
             <p v-if="run.handoff" class="hint">
               交接记录：{{
                 {

@@ -1,8 +1,8 @@
 # parallel_pi MVP 设计与讨论
 
-M1 应用骨架与 M2 执行恢复闭环已完成，当前进度以 [实施里程碑](milestones.md) 为准，应用运行见 [本地开发与验证](development.md)，M2 证据见 [阶段检查](evidence/m2-execution.md)。[实施交接](implementation-handoff.md) 和 [V01–V04 验证记录](validation.md) 保留设计到实施的依据；探针不替代应用验收。规格区分用户已确认约束 C、建议默认值 D、技术验证项 V；完整 MVP 仍待 M3–M5。
+M1 应用骨架、M2 执行恢复及 M3 地图与会话已完成，当前进度以 [实施里程碑](milestones.md) 为准，应用运行见 [本地开发与验证](development.md)，阶段证据见 [M2](evidence/m2-execution.md) 与 [M3](evidence/m3-map-sessions.md)。[实施交接](implementation-handoff.md) 和 [V01–V04 验证记录](validation.md) 保留设计到实施的依据；探针不替代应用验收。规格区分用户已确认约束 C、建议默认值 D、技术验证项 V；完整 MVP 仍待 M4/M5。
 
-- [已确认技术架构](./architecture.md)：五层职责、模块与进程、内核适配、数据归属、执行恢复及升级策略；前端采用 Vue 3，执行闭环已落地，完整地图与配置待后续阶段。
+- [已确认技术架构](./architecture.md)：五层职责、模块与进程、内核适配、数据归属、执行恢复及升级策略；前端采用 Vue 3，执行恢复和地图已落地，配置与成果交付待后续阶段。
 - [交互式项目结构图](./visualization/project-structure.html) 与 [结构说明](./visualization/README.md)：运行链路、目录映射与数据边界。
 - [MVP 可行性与设计讨论](./mvp-discussion.md)：双分支模型、内核集成、MVP 范围、风险和待定问题。
 - [地图与会话交互](./ui-interaction.md)：全局地图、右侧详情、专注会话和 pi 配置入口。

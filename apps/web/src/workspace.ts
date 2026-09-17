@@ -1,5 +1,5 @@
 import { onBeforeUnmount, ref } from 'vue';
-import type { WorkspaceSnapshot, RunActivity } from '@parallel-pi/contracts';
+import type { WorkspaceSnapshot, RunActivity, HistoryPage } from '@parallel-pi/contracts';
 
 export function useWorkspace() {
   const snapshot = ref<WorkspaceSnapshot | null>(null);
@@ -100,6 +100,11 @@ export function useWorkspace() {
     await refresh();
     return result;
   }
+  async function history(sessionId: string, before?: string, signal?: AbortSignal) {
+    const query = new URLSearchParams({ sessionId });
+    if (before) query.set('before', before);
+    return request<HistoryPage>(`/api/history?${query}`, undefined, signal);
+  }
   async function activity(runId: string, after: number, signal?: AbortSignal) {
     return request<{ cursor: number; activity: RunActivity[]; more: boolean }>(
       `/api/activity?runId=${encodeURIComponent(runId)}&after=${after}`,
@@ -113,7 +118,7 @@ export function useWorkspace() {
     clearTimeout(reconnectTimer);
     clearTimeout(refreshTimer);
   });
-  return { snapshot, connection, error, request, refresh, connect, command, activity };
+  return { snapshot, connection, error, request, refresh, connect, command, activity, history };
 }
 export type WorkspaceClient = ReturnType<typeof useWorkspace>;
 export const stateLabel: Record<string, string> = {

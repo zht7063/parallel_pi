@@ -1,4 +1,15 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync } from 'node:fs';
+import {
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  realpathSync,
+  openSync,
+  fsyncSync,
+  closeSync,
+  linkSync,
+  unlinkSync,
+} from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
@@ -11,6 +22,8 @@ import type {
   ProcessSupervisor,
   SupervisedProcess,
   ImageInput,
+  ForkInput,
+  ForkResult,
 } from '@parallel-pi/application';
 
 // All native JSON shapes remain inside this fixed-version adapter.
@@ -33,6 +46,36 @@ const textOf = (content: unknown): string =>
           .filter(Boolean)
           .join('\n')
       : '';
+
+function messageOf(entry: Json, forkable = false): EngineMessage {
+  return {
+    id: String(entry.id),
+    role: entry.message.role === 'toolResult' ? 'tool' : entry.message.role,
+    text: textOf(entry.message.content),
+    images: Array.isArray(entry.message.content)
+      ? entry.message.content
+          .filter((part: Json) => part.type === 'image')
+          .map((part: Json) => ({ mimeType: part.mimeType, data: part.data }))
+      : [],
+    forkable,
+  };
+}
+function nativeMessages(entries: Json[], points?: Set<string>): EngineMessage[] {
+  return entries
+    .filter(
+      (entry) =>
+        entry.type === 'message' &&
+        ['user', 'assistant', 'toolResult'].includes(entry.message?.role),
+    )
+    .map((entry) =>
+      messageOf(
+        entry,
+        points
+          ? points.has(entry.id)
+          : entry.message.role === 'user' && Boolean(textOf(entry.message.content)),
+      ),
+    );
+}
 
 class Rpc {
   readonly process: SupervisedProcess;
@@ -227,7 +270,111 @@ export function createEngine(options: {
 }): Engine {
   mkdirSync(options.sessionRoot, { recursive: true, mode: 0o700 });
   const sessionRoot = realpathSync(options.sessionRoot);
+  function forkPaths(input: ForkInput) {
+    if (
+      !/^[a-zA-Z0-9_-]{1,128}$/.test(input.operationId) ||
+      resolve(dirname(input.sourceRef)) !== sessionRoot ||
+      resolve(dirname(input.targetRef)) !== sessionRoot ||
+      input.sourceRef === input.targetRef
+    )
+      throw new Error('Invalid application fork paths');
+    const directory = join(sessionRoot, '.forks');
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    return {
+      receipt: join(directory, `${input.operationId}.json`),
+      scratch: join(directory, input.operationId),
+    };
+  }
+  async function reconcileFork(input: ForkInput): Promise<ForkResult | null> {
+    const { receipt } = forkPaths(input);
+    if (!existsSync(receipt)) {
+      if (existsSync(input.targetRef)) throw new Error('Fork target has no matching receipt');
+      return null;
+    }
+    const saved = JSON.parse(readFileSync(receipt, 'utf8'));
+    if (saved.version !== 1 || JSON.stringify(saved.input) !== JSON.stringify(input))
+      throw new Error('Fork receipt differs from the pending intent');
+    const entries: Json[] = saved.nativeContent
+      .trim()
+      .split('\n')
+      .map((line: string) => JSON.parse(line));
+    const header = entries[0];
+    if (
+      header?.type !== 'session' ||
+      header.version !== 3 ||
+      header.parentSession !== input.sourceRef ||
+      header.cwd !== input.directory ||
+      entries.some((entry) => entry.id === input.entryId)
+    )
+      throw new Error('Fork snapshot differs from its native boundary');
+    if (existsSync(input.targetRef)) {
+      if (readFileSync(input.targetRef, 'utf8') !== saved.nativeContent)
+        throw new Error('Fork target differs from its receipt; preserve it for inspection');
+    } else {
+      const temporary = `${input.targetRef}.pending`;
+      // A crash may leave a fully or partially written temporary. The receipt is
+      // authoritative and immutable; only this unpublished private file is replaced.
+      const fd = openSync(temporary, 'w', 0o600);
+      try {
+        writeFileSync(fd, saved.nativeContent);
+        fsyncSync(fd);
+      } finally {
+        closeSync(fd);
+      }
+      linkSync(temporary, input.targetRef);
+      unlinkSync(temporary);
+    }
+    for (const path of [input.targetRef, sessionRoot]) {
+      const fd = openSync(path, 'r');
+      try {
+        fsyncSync(fd);
+      } finally {
+        closeSync(fd);
+      }
+    }
+    const selected = messageOf({
+      id: input.entryId,
+      message: { role: 'user', content: saved.draft },
+    });
+    return {
+      messages: nativeMessages(entries),
+      draft: { text: selected.text, images: selected.images },
+    };
+  }
   return {
+    reconcileFork,
+    async fork(input) {
+      const paths = forkPaths(input);
+      if (existsSync(paths.receipt) || existsSync(input.targetRef))
+        throw new Error('Fork already has artifacts; reconcile the existing operation');
+      const child = options.supervisor.start({
+        id: input.operationId,
+        directory: input.directory,
+        command: process.execPath,
+        args: [
+          fileURLToPath(new URL('./fork-worker.mjs', import.meta.url)),
+          JSON.stringify(input),
+          paths.receipt,
+          paths.scratch,
+        ],
+      });
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        void child.stop();
+      }, 30000);
+      try {
+        const proof = await child.completion;
+        if (!proof.settled) throw new Error(proof.reason);
+        if (timedOut || proof.exitCode !== 0)
+          throw new Error('Native fork did not complete; reconcile before retrying');
+        const result = await reconcileFork(input);
+        if (!result) throw new Error('Native fork receipt is missing');
+        return result;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
     sessionPath(id) {
       if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) throw new Error('Invalid session ID');
       return join(sessionRoot, `${id}.jsonl`);
@@ -293,25 +440,11 @@ export function createEngine(options: {
           },
           async messages() {
             const data = await rpc.command('get_entries');
-            return data.entries
-              .filter(
-                (entry: Json) =>
-                  entry.type === 'message' &&
-                  ['user', 'assistant', 'toolResult'].includes(entry.message?.role),
-              )
-              .map(
-                (entry: Json) =>
-                  ({
-                    id: String(entry.id),
-                    role: entry.message.role === 'toolResult' ? 'tool' : entry.message.role,
-                    text: textOf(entry.message.content),
-                    images: Array.isArray(entry.message.content)
-                      ? entry.message.content
-                          .filter((part: Json) => part.type === 'image')
-                          .map((part: Json) => ({ mimeType: part.mimeType, data: part.data }))
-                      : [],
-                  }) satisfies EngineMessage,
-              );
+            const points = await rpc.command('get_fork_messages');
+            return nativeMessages(
+              data.entries,
+              new Set(points.messages.map((point: Json) => String(point.entryId))),
+            );
           },
           execute: (text, images) => rpc.execute(text, images),
           answer: (id, value) => rpc.answer(id, value),

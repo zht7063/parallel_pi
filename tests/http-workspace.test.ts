@@ -88,6 +88,29 @@ test(
       final = await snapshot();
     }
     assert.equal(final.runs[0]?.state, 'succeeded', JSON.stringify(final.runs));
+    const latestHistory = await (
+      await fetch(`${url}/api/history?sessionId=${session.id}&limit=1`, { headers })
+    ).json();
+    assert.equal(latestHistory.messages.length, 1);
+    assert.equal(latestHistory.more, true);
+    const olderHistory = await (
+      await fetch(
+        `${url}/api/history?sessionId=${session.id}&before=${latestHistory.messages[0].id}&limit=1`,
+        { headers },
+      )
+    ).json();
+    assert.equal(olderHistory.messages[0].text, 'hello over HTTP');
+    assert.equal(olderHistory.more, false);
+    assert.equal(
+      (await fetch(`${url}/api/history?sessionId=${session.id}&before=missing`, { headers }))
+        .status,
+      400,
+    );
+    assert.equal(
+      (await fetch(`${url}/api/history?sessionId=${session.id}&limit=101`, { headers })).status,
+      400,
+    );
+
     const controller = new AbortController();
     const events = await fetch(url + `/api/events?after=${before.cursor}`, {
       headers,

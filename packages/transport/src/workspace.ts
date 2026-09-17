@@ -4,6 +4,12 @@ import type { WorkspaceSnapshot, WorkspaceEvent } from '@parallel-pi/contracts';
 
 export function projectSnapshot(app: Harness): WorkspaceSnapshot {
   const { state, cursor } = app.snapshot();
+  const lastActivity = new Map<string, number>();
+  for (const run of state.runs)
+    lastActivity.set(
+      run.sessionId,
+      Math.max(lastActivity.get(run.sessionId) ?? 0, run.createdAt, run.endedAt ?? 0),
+    );
   return {
     cursor,
     concurrency: state.concurrency,
@@ -18,28 +24,41 @@ export function projectSnapshot(app: Harness): WorkspaceSnapshot {
       error: job.error,
       recordId: job.receipt?.id ?? null,
     })),
-    projects: state.projects.map(({ id, directory, title, model }) => ({
-      id,
-      directory,
-      title,
-      model,
-    })),
-    lanes: state.lanes.map(({ id, projectId, ref, directory, state, reason }) => ({
+    projects: state.projects.map(
+      ({ id, directory, title, model, remoteBranches, remoteFetchedAt, remoteError }) => ({
+        id,
+        directory,
+        title,
+        model,
+        remoteBranches: remoteBranches ?? [],
+        remoteFetchedAt: remoteFetchedAt ?? null,
+        remoteError: remoteError ?? null,
+      }),
+    ),
+    lanes: state.lanes.map(({ id, projectId, ref, upstream, directory, state, reason }) => ({
       id,
       projectId,
       ref,
+      upstream: upstream ?? null,
       directory,
       state,
       reason,
     })),
-    sessions: state.sessions.map(({ id, laneId, title, state, model, messages }) => ({
-      id,
-      laneId,
-      title,
-      state,
-      model,
-      messages,
-    })),
+    sessions: state.sessions.map(
+      ({ id, laneId, title, state, model, messages, pathId, origin, createdAt }) => ({
+        id,
+        laneId,
+        title,
+        state,
+        model,
+        messages: messages.slice(-40),
+        messageCount: messages.length,
+        pathId: pathId ?? id,
+        createdAt,
+        lastActivityAt: lastActivity.get(id) ?? createdAt,
+        origin,
+      }),
+    ),
     runs: state.runs.map(
       ({ id, sessionId, laneId, text, attachmentIds, model, state, error, question, handoff }) => ({
         id,
@@ -125,12 +144,35 @@ export async function command(app: Harness, input: Record<string, unknown>): Pro
     case 'project.refresh':
       await app.refreshProject(id(input.projectId));
       return {};
+    case 'branch.create':
+      if (typeof input.track !== 'boolean')
+        throw new Error('Choose local or remote branch creation');
+      return app.createBranch({
+        requestId: id(input.requestId),
+        laneId: id(input.laneId),
+        name: string(input.name, 256),
+        startRef: string(input.startRef, 1024),
+        track: input.track,
+      });
+    case 'project.fetch':
+      await app.refreshRemotes(id(input.laneId));
+      return {};
     case 'session.create': {
       const value = await app.createSession(
         id(input.laneId),
         typeof input.title === 'string' ? input.title.slice(0, 200) : '',
         model(input.model),
         input.requestId === undefined ? undefined : id(input.requestId),
+        input.parentSessionId === undefined ? undefined : id(input.parentSessionId),
+      );
+      return { id: value.id };
+    }
+    case 'session.fork': {
+      const value = await app.forkSession(
+        id(input.sessionId),
+        id(input.entryId),
+        typeof input.title === 'string' ? input.title.slice(0, 200) : '',
+        id(input.requestId),
       );
       return { id: value.id };
     }

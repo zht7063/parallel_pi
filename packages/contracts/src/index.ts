@@ -26,26 +26,43 @@ export interface WorkspaceSnapshot {
     error: string | null;
     recordId: string | null;
   }[];
-  projects: { id: string; directory: string; title: string; model?: ModelChoice }[];
+  projects: {
+    id: string;
+    directory: string;
+    title: string;
+    model?: ModelChoice;
+    remoteBranches: { ref: string; name: string; remote: string; head: string }[];
+    remoteFetchedAt: number | null;
+    remoteError: string | null;
+  }[];
   lanes: {
     id: string;
     projectId: string;
     ref: string;
+    upstream: string | null;
     directory: string | null;
     state: 'ready' | 'paused' | 'recovering';
     reason: string | null;
   }[];
   sessions: {
     id: string;
+    pathId: string;
+    createdAt: number;
+    lastActivityAt: number;
+    origin?:
+      | { kind: 'continue'; sessionId: string }
+      | { kind: 'fork'; sessionId: string; entryId: string };
     laneId: string;
     title: string;
     state: 'creating' | 'ready' | 'error';
     model: ModelChoice;
+    messageCount: number;
     messages: {
       id: string;
       role: 'user' | 'assistant' | 'tool';
       text: string;
       images: { mimeType: string; data: string }[];
+      forkable?: boolean;
     }[];
   }[];
   runs: {
@@ -91,4 +108,10 @@ export interface RunActivity {
   text: string;
   phase?: string;
   name?: string;
+}
+
+export interface HistoryPage {
+  messages: WorkspaceSnapshot['sessions'][number]['messages'];
+  total: number;
+  more: boolean;
 }

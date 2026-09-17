@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import type { WorkspaceAccess, RepositoryFacts, ProcessSupervisor } from '@parallel-pi/application';
 
 const execute = promisify(execFile);
+const safeError = (value: string) => value.replace(/(https?:\/\/)[^/\s@]+@/g, '$1<redacted>@');
 const pathLine = (value: string) => (value.endsWith('\n') ? value.slice(0, -1) : value);
 async function git(directory: string, ...args: string[]): Promise<string> {
   try {
@@ -17,7 +18,7 @@ async function git(directory: string, ...args: string[]): Promise<string> {
     return stdout;
   } catch (cause) {
     const error = cause as Error & { stderr?: string };
-    throw new Error(error.stderr?.trim() || 'Git command failed', { cause });
+    throw new Error(safeError(error.stderr?.trim() || 'Git command failed'), { cause });
   }
 }
 async function worktrees(directory: string): Promise<RepositoryFacts['worktrees']> {
@@ -62,7 +63,7 @@ export function createGit(supervisor?: ProcessSupervisor): WorkspaceAccess {
     try {
       const proof = await child.completion;
       if (!proof.settled) throw new Error(proof.reason);
-      if (proof.exitCode !== 0) throw new Error(error || 'Git operation failed');
+      if (proof.exitCode !== 0) throw new Error(safeError(error || 'Git operation failed'));
       return output;
     } finally {
       clearTimeout(timer);
@@ -89,7 +90,7 @@ export function createGit(supervisor?: ProcessSupervisor): WorkspaceAccess {
           { cause },
         );
       }
-      const [branches, entries, status] = await Promise.all([
+      const [branches, entries, status, remoteRefs, remoteNames] = await Promise.all([
         git(
           directory,
           'for-each-ref',
@@ -98,6 +99,13 @@ export function createGit(supervisor?: ProcessSupervisor): WorkspaceAccess {
         ),
         worktrees(directory),
         git(directory, 'status', '--porcelain=v1', '-z'),
+        git(
+          directory,
+          'for-each-ref',
+          '--format=%(refname)%00%(objectname)%00%(symref)',
+          'refs/remotes/',
+        ),
+        git(directory, 'remote'),
       ]);
       return {
         repository,
@@ -106,6 +114,23 @@ export function createGit(supervisor?: ProcessSupervisor): WorkspaceAccess {
         head,
         dirty: Boolean(status),
         worktrees: entries,
+        remoteBranches: remoteRefs
+          .trimEnd()
+          .split('\n')
+          .filter(Boolean)
+          .flatMap((line) => {
+            const [ref, head, symbolic] = line.split('\0');
+            if (!ref || !head || symbolic) return [];
+            const remote = remoteNames
+              .trimEnd()
+              .split('\n')
+              .filter(Boolean)
+              .sort((a, b) => b.length - a.length)
+              .find((name) => ref.startsWith(`refs/remotes/${name}/`));
+            return remote
+              ? [{ ref, head, remote, name: ref.slice(`refs/remotes/${remote}/`.length) }]
+              : [];
+          }),
         branches: branches
           .trimEnd()
           .split('\n')
@@ -149,13 +174,31 @@ export function createGit(supervisor?: ProcessSupervisor): WorkspaceAccess {
       if ((await git(binding.directory, 'ls-files', '-u', '-z')).length)
         throw new Error('Resolve Git conflicts before running');
     },
-    async createBranch(directory, name, startRef) {
+    async checkBranchName(directory, name) {
       if (!name || name.startsWith('-')) throw new Error('Invalid branch name');
       await git(directory, 'check-ref-format', `refs/heads/${name}`);
-      if (!startRef.startsWith('refs/heads/'))
-        throw new Error('Select a local branch as the starting point');
+    },
+    async createBranch(directory, name, startRef, operationId, track = false) {
+      await this.checkBranchName(directory, name);
+      if (
+        !(track
+          ? startRef.startsWith('refs/remotes/')
+          : startRef.startsWith('refs/heads/') || /^[a-f0-9]{40,64}$/.test(startRef))
+      )
+        throw new Error('Select a valid branch as the starting point');
       const start = (await git(directory, 'rev-parse', '--verify', `${startRef}^{commit}`)).trim();
-      await git(directory, 'branch', '--no-track', '--', name, start);
+      await writeGit(
+        directory,
+        ['branch', track ? '--track' : '--no-track', '--', name, track ? startRef : start],
+        operationId,
+      );
+    },
+    async fetchRemotes(directory, operationId, remote) {
+      await writeGit(
+        directory,
+        remote ? ['fetch', '--prune', '--', remote] : ['fetch', '--all', '--prune'],
+        operationId,
+      );
     },
     async prepareWorktree(directory, ref, target, operationId) {
       if (!ref.startsWith('refs/heads/')) throw new Error('Expected a local branch');

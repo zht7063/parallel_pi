@@ -7,11 +7,15 @@ export interface Project {
   title: string;
   createdAt: number;
   model?: ModelSelection;
+  remoteBranches?: { ref: string; name: string; remote: string; head: string }[];
+  remoteFetchedAt?: number;
+  remoteError?: string | null;
 }
 export interface Lane {
   id: string;
   projectId: string;
   ref: string;
+  upstream?: string | null;
   directory: string | null;
   state: LaneState;
   reason: string | null;
@@ -20,8 +24,18 @@ export interface Lane {
 export interface Operation {
   id: string;
   laneId: string;
-  kind: 'prepare-worktree' | 'create-session' | 'save-memory';
+  kind:
+    | 'prepare-worktree'
+    | 'create-session'
+    | 'save-memory'
+    | 'create-branch'
+    | 'fetch-remotes'
+    | 'fork-session';
   memorySaveId?: string;
+  requestId?: string;
+  fingerprint?: string;
+  expectedHead?: string;
+  upstream?: string;
   sessionId?: string;
   target: string;
   state: 'pending' | 'completed' | 'failed' | 'uncertain';
@@ -65,12 +79,21 @@ export interface RepositoryFacts {
   head: string;
   dirty: boolean;
   branches: { ref: string; head: string; upstream: string | null }[];
+  remoteBranches: { ref: string; name: string; remote: string; head: string }[];
   worktrees: { directory: string; ref: string | null; head: string; locked: boolean }[];
 }
 export interface WorkspaceAccess {
   inspect(directory: string): Promise<RepositoryFacts>;
   validate(binding: { repository: string; ref: string; directory: string }): Promise<void>;
-  createBranch(directory: string, name: string, startRef: string): Promise<void>;
+  checkBranchName(directory: string, name: string): Promise<void>;
+  createBranch(
+    directory: string,
+    name: string,
+    startRef: string,
+    operationId?: string,
+    track?: boolean,
+  ): Promise<void>;
+  fetchRemotes(directory: string, operationId: string, remote?: string): Promise<void>;
   prepareWorktree(
     directory: string,
     ref: string,
@@ -125,6 +148,7 @@ export interface EngineMessage {
   role: 'user' | 'assistant' | 'tool';
   text: string;
   images: ImageInput[];
+  forkable?: boolean;
 }
 export interface EngineQuestion {
   id: string;
@@ -155,7 +179,20 @@ export interface EngineConnection {
   cancel(): Promise<void>;
   close(): Promise<ReapEvidence>;
 }
+export interface ForkInput {
+  operationId: string;
+  directory: string;
+  sourceRef: string;
+  targetRef: string;
+  entryId: string;
+}
+export interface ForkResult {
+  messages: EngineMessage[];
+  draft: { text: string; images: ImageInput[] };
+}
 export interface Engine {
+  fork(input: ForkInput): Promise<ForkResult>;
+  reconcileFork(input: ForkInput): Promise<ForkResult | null>;
   open(
     input: { operationId: string; directory: string; sessionRef: string; create?: boolean },
     emit: (event: EngineEvent) => void,
@@ -170,6 +207,10 @@ export interface Session {
   title: string;
   nativeRef: string;
   creationRequestId?: string;
+  creationFingerprint?: string;
+  pathId?: string;
+  origin?:
+    { kind: 'continue'; sessionId: string } | { kind: 'fork'; sessionId: string; entryId: string };
   state: 'creating' | 'ready' | 'error';
   model: ModelSelection;
   createdAt: number;

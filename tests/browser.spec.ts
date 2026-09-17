@@ -45,6 +45,13 @@ test('real UI adds a dirty repository, executes images, preserves drafts, retrie
   git('add', '.');
   git('commit', '-m', 'initial');
   git('branch', 'other');
+  const remoteDirectory = join(root, 'remote.git');
+  execFileSync('git', ['clone', '--bare', root, remoteDirectory], { stdio: 'pipe' });
+  execFileSync('git', ['-C', remoteDirectory, 'update-ref', 'refs/heads/remote-only', 'HEAD'], {
+    stdio: 'pipe',
+  });
+  git('remote', 'add', 'origin', remoteDirectory);
+  git('fetch', 'origin');
   writeFileSync(join(root, 'code'), 'dirty');
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -142,11 +149,21 @@ test('real UI adds a dirty repository, executes images, preserves drafts, retrie
     await composer.fill('probe-slow-tool');
     await page.getByRole('button', { name: '发送', exact: true }).click();
     await expect(page.locator('.tool-event')).toContainText(['bash'], { timeout: 15000 });
+    await page.getByRole('button', { name: '查看地图', exact: true }).click();
+    await expect(
+      page
+        .getByRole('region', { name: '浮层分支地图', exact: true })
+        .getByRole('region', { name: 'main', exact: true })
+        .locator('.lane-heading .status-chip'),
+    ).toHaveText('执行中');
+    await page.getByRole('button', { name: '关闭地图', exact: true }).click();
+
     await composer.fill('停止后恢复');
     await page.getByRole('button', { name: '加入队列', exact: true }).click();
     await page.getByRole('button', { name: '停止当前执行' }).click();
     await expect(page.getByRole('button', { name: '恢复未启动的队列' })).toBeVisible();
     await expect(page.locator('.run-row strong').first()).toHaveText('排队中');
+    await expect(page.locator('.run-row').first()).toContainText('等待序列第 1 项');
     await page.getByRole('button', { name: '恢复未启动的队列' }).click();
     await expect(page.locator('.run-row strong').first()).toHaveText('执行完成', {
       timeout: 15000,
@@ -159,6 +176,84 @@ test('real UI adds a dirty repository, executes images, preserves drafts, retrie
       true,
     );
     await page.screenshot({ path: 'test-results/conversation-narrow.png', fullPage: true });
+    const beforeContinue = await page.evaluate(
+      async () => await (await fetch('/api/snapshot')).json(),
+    );
+    await page.getByRole('button', { name: '← 返回全局地图', exact: true }).click();
+    await page
+      .getByRole('region', { name: 'main', exact: true })
+      .getByRole('button', { name: '新建接续会话', exact: true })
+      .click();
+    await expect(page.getByRole('dialog')).toContainText('不复制聊天或自动运行');
+    await page.getByLabel('会话标题').fill('接续探索');
+    await expect(page.getByLabel('模型 ID', { exact: true })).toHaveValue('probe-a');
+    await page.getByRole('button', { name: '创建会话', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '接续探索', exact: true })).toBeVisible();
+    await expect(composer).toHaveValue('');
+    await expect(page.locator('.message')).toHaveCount(0);
+    const afterContinue = await page.evaluate(
+      async () => await (await fetch('/api/snapshot')).json(),
+    );
+    expect(afterContinue.runs).toHaveLength(beforeContinue.runs.length);
+    expect(afterContinue.sessions.at(-1).origin).toEqual({
+      kind: 'continue',
+      sessionId: beforeContinue.sessions[0].id,
+    });
+    expect(afterContinue.sessions.at(-1).pathId).toBe(beforeContinue.sessions[0].pathId);
+    await page.reload();
+    await expect(page.getByRole('heading', { name: '接续探索', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '← 返回全局地图', exact: true }).click();
+    await page.getByRole('button', { name: '新建 Git 分支', exact: true }).click();
+    await page.getByLabel('本地分支名称').fill('bad name');
+    await page.getByRole('button', { name: '创建本地分支', exact: true }).click();
+    await expect(page.locator('#form-error')).not.toBeEmpty();
+    await expect(page.getByLabel('本地分支名称')).toHaveValue('bad name');
+    await page.getByLabel('本地分支名称').fill('browser-feature');
+    await page.getByLabel('起点分支').selectOption('refs/heads/main');
+    await page.getByRole('button', { name: '创建本地分支', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'browser-feature', exact: true })).toBeVisible();
+    await page.locator('.remote-branches > summary').click();
+    const remoteRow = page.locator('.remote-branch-row').filter({ hasText: 'origin/remote-only' });
+    await remoteRow.getByRole('button', { name: '拉取到本地' }).click();
+    await page.getByRole('button', { name: '创建本地分支', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'remote-only', exact: true })).toBeVisible();
+    await expect(remoteRow).toHaveCount(0);
+    expect(git('symbolic-ref', 'HEAD').toString().trim()).toBe('refs/heads/main');
+    expect(readFileSync(join(root, 'code'), 'utf8')).toBe('dirty');
+    await page
+      .locator('.session-node')
+      .filter({ has: page.getByRole('button', { name: '预览 端到端会话', exact: true }) })
+      .getByRole('button', { name: '进入会话 →', exact: true })
+      .click();
+    const pointButton = page.getByRole('button', { name: '从此处分叉', exact: true }).first();
+    await pointButton.click();
+    await expect(page.getByRole('dialog')).toContainText('这条消息之前的历史');
+    await expect(page.getByRole('dialog')).toContainText('浏览器图片验证');
+    await expect(page.getByRole('dialog')).toContainText('包含 1 张图片');
+    await page.keyboard.press('Escape');
+    await expect(pointButton).toBeFocused();
+    await pointButton.press('Enter');
+    await page.getByLabel('分叉会话标题').fill('浏览器分叉');
+    await page.screenshot({ path: 'test-results/fork-dialog-narrow.png', fullPage: true });
+    await page.getByRole('button', { name: '创建分叉会话', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '浏览器分叉', exact: true })).toBeVisible();
+    await expect(composer).toHaveValue('浏览器图片验证');
+    await expect(page.getByRole('button', { name: '移除图片' })).toHaveCount(1);
+    await expect(page.locator('.message')).toHaveCount(0);
+    const forked = await page.evaluate(async () => await (await fetch('/api/snapshot')).json());
+    expect(forked.runs).toHaveLength(beforeContinue.runs.length);
+    expect(forked.sessions.at(-1).origin).toEqual({
+      kind: 'fork',
+      sessionId: beforeContinue.sessions[0].id,
+      entryId: beforeContinue.sessions[0].messages[0].id,
+    });
+    await page.reload();
+    await expect(composer).toHaveValue('浏览器图片验证');
+    await expect(page.getByRole('button', { name: '移除图片' })).toHaveCount(1);
+    expect(readFileSync(join(root, 'code'), 'utf8')).toBe('dirty');
+    await page.getByRole('button', { name: '← 返回全局地图', exact: true }).click();
+    await expect(page.locator('.session-edges .fork text')).toHaveText('分叉');
+    await expect(page.locator('.session-edges .continue text')).toHaveText('接续');
     expect(errors).toEqual([]);
   } finally {
     rmSync(root, { recursive: true, force: true });

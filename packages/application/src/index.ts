@@ -31,6 +31,8 @@ export type {
   EngineEvent,
   EngineConnection,
   Engine,
+  ForkInput,
+  ForkResult,
 } from './ports.ts';
 
 export type { Session, Run, Attachment, AttachmentStore } from './ports.ts';

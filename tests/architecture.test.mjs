@@ -34,4 +34,21 @@ test('architecture guard rejects reverse type imports, private entries, relative
   assert.match(errors, /relative import escapes/);
   assert.match(errors, /platform dependency forbidden/);
   assert.match(errors, /Import cycle/);
+  // Only infra-pi may bind this pinned native entry; other escapes stay forbidden.
+  const native = join(root, 'vendor/pi/packages/coding-agent/dist/core');
+  mkdirSync(native, { recursive: true });
+  writeFileSync(join(native, 'session-manager.js'), 'export class SessionManager {}');
+  const adapter = join(root, 'packages/infra-pi');
+  mkdirSync(join(adapter, 'src'), { recursive: true });
+  writeFileSync(join(adapter, 'package.json'), JSON.stringify({ exports: './src/index.ts' }));
+  const nativeImport =
+    "import { SessionManager } from '../../../vendor/pi/packages/coding-agent/dist/core/session-manager.js';";
+  writeFileSync(join(adapter, 'src/index.ts'), nativeImport);
+  assert.ok(!checkArchitecture(root).some((error) => error.startsWith('packages/infra-pi/')));
+  writeFileSync(join(root, 'packages/application/src/native.ts'), nativeImport);
+  assert.ok(
+    checkArchitecture(root).some((error) =>
+      error.includes('application/src/native.ts: relative import escapes'),
+    ),
+  );
 });

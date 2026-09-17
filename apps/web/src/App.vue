@@ -1,17 +1,54 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
-import { useWorkspace, stateLabel, isActive } from './workspace.ts';
+import { computed, nextTick, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { useWorkspace, isActive } from './workspace.ts';
 import { useDrafts } from './drafts.ts';
 import AppDialog from './components/AppDialog.vue';
 import Conversation from './components/Conversation.vue';
+import type { WorkspaceSnapshot } from '@parallel-pi/contracts';
+import ProjectMap from './components/ProjectMap.vue';
+import MapThumbnail from './components/MapThumbnail.vue';
 const client = useWorkspace(),
   drafts = useDrafts(client);
 const data = client.snapshot;
+const mapOpen = ref(false),
+  projectsOpen = ref(false);
+const mapCloseButton = ref<HTMLButtonElement | null>(null);
+const globalMap = ref<InstanceType<typeof ProjectMap> | null>(null),
+  overlayMap = ref<InstanceType<typeof ProjectMap> | null>(null);
+let mapTrigger: HTMLElement | null = null;
+async function openMap() {
+  if (mapOpen.value) return;
+  mapTrigger = document.activeElement as HTMLElement;
+  mapOpen.value = true;
+  await nextTick();
+  mapCloseButton.value?.focus();
+}
+function closeMap() {
+  mapOpen.value = false;
+  mapTrigger?.focus();
+}
+function escapeMap(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || dialog.value || event.isComposing) return;
+  if (projectsOpen.value) {
+    projectsOpen.value = false;
+    document.querySelector<HTMLElement>('.projects-toggle')?.focus();
+    return;
+  }
+  if ((mapOpen.value ? overlayMap.value : globalMap.value)?.closeTop()) {
+    event.preventDefault();
+    return;
+  }
+  if (mapOpen.value) {
+    event.preventDefault();
+    closeMap();
+  }
+}
 const selectedProject = ref(''),
   activeSession = ref(''),
   preview = ref('');
-const dialog = ref<'project' | 'session' | 'settings' | null>(null),
+const dialog = ref<'project' | 'session' | 'settings' | 'branch' | 'fork' | null>(null),
   busy = ref(false),
+  commandBusy = ref(false),
   formError = ref('');
 const form = reactive({
   directory: '',
@@ -20,6 +57,11 @@ const form = reactive({
   provider: '',
   model: '',
   requestId: '',
+  parentSessionId: '',
+  forkEntryId: '',
+  branchName: '',
+  startRef: '',
+  track: false,
   concurrency: 2,
 });
 const project = computed(() =>
@@ -28,6 +70,15 @@ const project = computed(() =>
 const lanes = computed(
   () => data.value?.lanes.filter((item) => item.projectId === project.value?.id) ?? [],
 );
+function openBranch(remote?: { ref: string; name: string }) {
+  const selected =
+    lanes.value.find((lane) => lane.id === previewSession.value?.laneId) ?? lanes.value[0];
+  if (!selected) return;
+  open('branch', selected.id);
+  form.branchName = remote?.name ?? '';
+  form.startRef = remote?.ref ?? selected.ref;
+  form.track = Boolean(remote);
+}
 const session = computed(() =>
   data.value?.sessions.find((item) => item.id === activeSession.value),
 );
@@ -37,37 +88,88 @@ const sessionLane = computed(() =>
 const previewSession = computed(() =>
   data.value?.sessions.find((item) => item.id === preview.value),
 );
+const forkSource = computed(() =>
+  data.value?.sessions.find((item) => item.id === form.parentSessionId),
+);
+const chosenForkPoint = ref<WorkspaceSnapshot['sessions'][number]['messages'][number] | null>(null);
+const forkPoint = computed(
+  () =>
+    forkSource.value?.messages.find((message) => message.id === form.forkEntryId) ??
+    chosenForkPoint.value,
+);
+function openFork(message: WorkspaceSnapshot['sessions'][number]['messages'][number]) {
+  if (!session.value) return;
+  open('fork', session.value.laneId, session.value.id);
+  form.forkEntryId = message.id;
+  chosenForkPoint.value = message;
+}
+function restoreSession(projectId: string) {
+  let stored = '';
+  try {
+    stored = localStorage.getItem(`parallel_pi.view.${projectId}`) ?? '';
+  } catch {}
+  const laneIds = new Set(
+    data.value?.lanes.filter((lane) => lane.projectId === projectId).map((lane) => lane.id),
+  );
+  return data.value?.sessions.some(
+    (item) => item.id === stored && item.state === 'ready' && laneIds.has(item.laneId),
+  )
+    ? stored
+    : '';
+}
 function chooseProject(id: string) {
+  projectsOpen.value = false;
   selectedProject.value = id;
-  activeSession.value = '';
+  activeSession.value = restoreSession(id);
   preview.value = '';
+  mapOpen.value = false;
   try {
     localStorage.setItem('parallel_pi.project', id);
   } catch {}
 }
 function enter(id: string) {
+  if (data.value?.sessions.find((item) => item.id === id)?.state !== 'ready') return false;
   activeSession.value = id;
+  mapOpen.value = false;
+  void nextTick(() => document.querySelector<HTMLElement>('.conversation-heading h2')?.focus());
   preview.value = '';
   try {
     localStorage.setItem(`parallel_pi.view.${selectedProject.value}`, id);
   } catch {}
+  return true;
 }
 function back() {
+  projectsOpen.value = false;
+  mapOpen.value = false;
   activeSession.value = '';
   try {
     localStorage.removeItem(`parallel_pi.view.${selectedProject.value}`);
   } catch {}
 }
-function open(type: 'project' | 'session' | 'settings', laneId = '') {
+function open(
+  type: 'project' | 'session' | 'settings' | 'branch' | 'fork',
+  laneId = '',
+  parentSessionId = '',
+) {
+  projectsOpen.value = false;
   formError.value = '';
   dialog.value = type;
   form.laneId = laneId;
+  form.parentSessionId = parentSessionId;
   form.title = '';
   form.requestId = crypto.randomUUID();
   if (type === 'session') {
-    const previous = data.value?.sessions.find((item) => item.laneId === laneId);
-    form.provider = project.value?.model?.provider ?? previous?.model.provider ?? '';
-    form.model = project.value?.model?.model ?? previous?.model.model ?? '';
+    const previous = data.value?.sessions.find((item) =>
+      parentSessionId ? item.id === parentSessionId : item.laneId === laneId,
+    );
+    form.provider =
+      (parentSessionId ? previous?.model.provider : project.value?.model?.provider) ??
+      previous?.model.provider ??
+      '';
+    form.model =
+      (parentSessionId ? previous?.model.model : project.value?.model?.model) ??
+      previous?.model.model ??
+      '';
   }
   if (type === 'settings') form.concurrency = data.value?.concurrency ?? 2;
 }
@@ -85,6 +187,12 @@ async function submit() {
     document.getElementById(!form.provider.trim() ? 'provider' : 'model')?.focus();
     return;
   }
+  if (dialog.value === 'branch' && (!form.branchName.trim() || !form.startRef)) {
+    formError.value = '请填写分支名称并选择起点。';
+    await nextTick();
+    document.getElementById('branch-name')?.focus();
+    return;
+  }
   busy.value = true;
   formError.value = '';
   try {
@@ -100,9 +208,28 @@ async function submit() {
         laneId: form.laneId,
         title: form.title,
         requestId: form.requestId,
+        ...(form.parentSessionId ? { parentSessionId: form.parentSessionId } : {}),
         model: { provider: form.provider.trim(), model: form.model.trim() },
       });
-      enter(result.id);
+      if (!enter(result.id)) throw new Error('会话创建尚未确认，请先核验分支恢复。输入已保留。');
+    } else if (dialog.value === 'fork') {
+      const result = await client.command<{ id: string }>({
+        type: 'session.fork',
+        sessionId: form.parentSessionId,
+        entryId: form.forkEntryId,
+        title: form.title,
+        requestId: form.requestId,
+      });
+      if (!enter(result.id)) throw new Error('会话创建尚未确认，请先核验分支恢复。输入已保留。');
+    } else if (dialog.value === 'branch') {
+      await client.command({
+        type: 'branch.create',
+        requestId: form.requestId,
+        laneId: form.laneId,
+        name: form.branchName.trim(),
+        startRef: form.startRef,
+        track: form.track,
+      });
     } else await client.command({ type: 'concurrency.set', value: form.concurrency });
     dialog.value = null;
   } catch (cause) {
@@ -112,10 +239,15 @@ async function submit() {
   }
 }
 async function command(input: unknown) {
+  if (commandBusy.value) return;
+  commandBusy.value = true;
+  client.error.value = '';
   try {
     await client.command(input);
   } catch (cause) {
     client.error.value = cause instanceof Error ? cause.message : '操作失败';
+  } finally {
+    commandBusy.value = false;
   }
 }
 function projectStatus(id: string) {
@@ -129,10 +261,6 @@ function projectStatus(id: string) {
     return '需要处理';
   return '就绪';
 }
-function lastState(id: string) {
-  const run = data.value?.runs.filter((item) => item.sessionId === id).at(-1);
-  return run ? stateLabel[run.state] : '尚未运行';
-}
 watch(data, (value) => {
   if (!selectedProject.value && value?.projects.length) {
     let stored = '';
@@ -142,18 +270,23 @@ watch(data, (value) => {
     selectedProject.value = value.projects.some((item) => item.id === stored)
       ? stored
       : value.projects[0]!.id;
-    try {
-      activeSession.value = localStorage.getItem(`parallel_pi.view.${selectedProject.value}`) ?? '';
-    } catch {}
+    activeSession.value = restoreSession(selectedProject.value);
   }
 });
 onMounted(() => {
+  window.addEventListener('keydown', escapeMap);
   void client.connect();
 });
+onBeforeUnmount(() => window.removeEventListener('keydown', escapeMap));
 </script>
 <template>
   <div class="shell">
-    <aside class="sidebar" aria-label="项目导航">
+    <aside
+      id="project-sidebar"
+      class="sidebar"
+      :class="{ 'projects-open': projectsOpen }"
+      aria-label="项目导航"
+    >
       <button type="button" class="wordmark" aria-label="parallel pi 全局地图" @click="back">
         p<span>∥</span>pi</button
       ><span class="nav-note">分支工作台</span>
@@ -186,6 +319,15 @@ onMounted(() => {
           <span v-if="project" class="project-path mono">{{ project.directory }}</span>
         </div>
         <div class="toolbar">
+          <button
+            class="projects-toggle"
+            type="button"
+            :aria-expanded="projectsOpen"
+            aria-controls="project-sidebar"
+            @click="projectsOpen = !projectsOpen"
+          >
+            {{ projectsOpen ? '关闭项目' : '项目' }}
+          </button>
           <span role="status">{{
             client.connection.value === 'loading'
               ? '正在连接…'
@@ -207,20 +349,84 @@ onMounted(() => {
           >
             刷新分支
           </button>
+          <button
+            v-if="project && !session"
+            type="button"
+            :disabled="commandBusy || client.connection.value !== 'connected'"
+            @click="openBranch()"
+          >
+            新建 Git 分支
+          </button>
+          <button
+            v-if="project && !session"
+            type="button"
+            :disabled="commandBusy || !lanes.length || client.connection.value !== 'connected'"
+            :aria-busy="commandBusy"
+            @click="command({ type: 'project.fetch', laneId: lanes[0]?.id })"
+          >
+            刷新远端
+          </button>
         </div>
       </header>
       <div v-if="client.error.value" class="error global-error" role="alert">
         {{ client.error.value }}
       </div>
-      <Conversation
-        v-if="session && sessionLane"
-        :key="session.id"
-        :session="session"
-        :lane="sessionLane"
-        :client="client"
-        :drafts="drafts"
-        @back="back"
-      />
+      <section v-if="session && sessionLane && data && project" class="focus-workspace">
+        <nav class="map-navigation" aria-label="会话地图导航">
+          <MapThumbnail
+            :snapshot="data"
+            :project-id="project.id"
+            :active-session="session.id"
+            :expanded="mapOpen"
+            @open="openMap"
+            @back="back"
+          />
+          <button
+            type="button"
+            :aria-expanded="mapOpen"
+            aria-controls="session-map-panel"
+            @click="openMap"
+          >
+            查看地图
+          </button>
+          <button type="button" @click="back">← 返回全局地图</button>
+        </nav>
+        <div class="focus-body">
+          <Conversation
+            :key="session.id"
+            :session="session"
+            :lane="sessionLane"
+            :client="client"
+            :drafts="drafts"
+            @fork="openFork"
+          />
+          <section
+            v-if="mapOpen"
+            id="session-map-panel"
+            class="map-overlay"
+            aria-label="会话中的项目地图"
+          >
+            <div class="map-overlay-heading">
+              <h2>项目地图</h2>
+              <button ref="mapCloseButton" type="button" @click="closeMap">关闭地图</button>
+            </div>
+            <ProjectMap
+              ref="overlayMap"
+              :key="`${project.id}-overlay`"
+              :snapshot="data"
+              :project-id="project.id"
+              scope="overlay"
+              :active-session="session.id"
+              :connected="client.connection.value === 'connected'"
+              :busy="commandBusy"
+              @enter="enter"
+              @create="(laneId, parentId) => open('session', laneId, parentId)"
+              @command="command"
+              @remote="openBranch"
+            />
+          </section>
+        </div>
+      </section>
       <section v-else-if="!project" class="empty" aria-labelledby="workspace-heading">
         <div class="branch-mark" aria-hidden="true">┬ ┬ ┬</div>
         <h2 id="workspace-heading">把项目放到地图上</h2>
@@ -235,136 +441,44 @@ onMounted(() => {
         </button>
         <p class="hint">已有修改会保留 · 同分支串行 · 不同分支并行</p>
       </section>
-      <section v-else class="map-area" aria-label="全局分支地图">
+      <section v-else class="map-area" aria-label="项目工作台">
         <div class="map-caption">
           <h2>分支地图</h2>
           <span>全局并发 {{ data?.concurrency }} · 选择会话预览，双击或通过按钮进入</span>
         </div>
-        <div class="branch-map">
-          <section
-            v-for="lane in lanes"
-            :key="lane.id"
-            class="branch-lane"
-            :aria-label="lane.ref.replace('refs/heads/', '')"
-          >
-            <div class="lane-heading">
-              <svg
-                class="branch-symbol"
-                aria-hidden="true"
-                width="18"
-                height="22"
-                viewBox="0 0 18 22"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.6"
-              >
-                <path d="M5 5v12M5 11c7 0 8-2 8-6" />
-                <circle cx="5" cy="3" r="2" />
-                <circle cx="13" cy="3" r="2" />
-                <circle cx="5" cy="19" r="2" />
-              </svg>
-              <h3 class="mono">{{ lane.ref.replace('refs/heads/', '') }}</h3>
-              <span class="status-chip">{{ stateLabel[lane.state] }}</span>
-            </div>
-            <p class="lane-detail">
-              {{ lane.directory ? '工作区已就绪' : '首次使用时准备工作区' }} ·
-              {{
-                data?.runs.filter((run) => run.laneId === lane.id && run.state === 'queued').length
-              }}
-              项排队
-            </p>
-            <div v-if="lane.state !== 'ready'" class="lane-warning">
-              <p>{{ lane.reason }}</p>
-              <button
-                v-if="lane.state === 'recovering'"
-                type="button"
-                @click="command({ type: 'lane.recover', laneId: lane.id })"
-              >
-                核验恢复</button
-              ><button
-                v-else
-                type="button"
-                @click="command({ type: 'lane.resume', laneId: lane.id })"
-              >
-                恢复队列
-              </button>
-            </div>
-            <div class="session-track">
-              <article
-                v-for="item in data?.sessions.filter((item) => item.laneId === lane.id)"
-                :key="item.id"
-                class="session-node"
-                :class="{ selected: preview === item.id }"
-              >
-                <button
-                  type="button"
-                  class="node-main"
-                  :aria-label="`预览 ${item.title}`"
-                  @click="preview = item.id"
-                  @dblclick="enter(item.id)"
-                >
-                  <strong>{{ item.title }}</strong
-                  ><span>{{
-                    item.state === 'ready' ? lastState(item.id) : stateLabel[item.state]
-                  }}</span>
-                  <p>
-                    {{
-                      item.messages
-                        .filter((message) => message.role === 'assistant')
-                        .at(-1)
-                        ?.text.slice(0, 90) || '从当前分支继续工作'
-                    }}
-                  </p></button
-                ><button
-                  type="button"
-                  class="node-enter"
-                  :disabled="item.state !== 'ready'"
-                  @click="enter(item.id)"
-                >
-                  进入会话 →
-                </button>
-              </article>
-              <p v-if="!data?.sessions.some((item) => item.laneId === lane.id)" class="lane-empty">
-                这条分支还没有会话。
-              </p>
-            </div>
-            <button
-              type="button"
-              class="new-session"
-              :disabled="lane.state === 'recovering' || client.connection.value !== 'connected'"
-              @click="open('session', lane.id)"
-            >
-              ＋ 新建独立会话
-            </button>
-          </section>
-        </div>
-        <section v-if="previewSession" class="session-preview" aria-label="会话预览">
-          <button type="button" @click="preview = ''">关闭预览</button>
-          <h2>{{ previewSession.title }}</h2>
-          <p>{{ lastState(previewSession.id) }}</p>
-          <p class="message-text">
-            {{
-              previewSession.messages
-                .filter((message) => message.role === 'assistant')
-                .at(-1)
-                ?.text.slice(0, 1200) || '尚无执行结果。进入会话后可以发送消息。'
-            }}
-          </p>
-          <button
-            type="button"
-            class="primary"
-            :disabled="previewSession.state !== 'ready'"
-            @click="enter(previewSession.id)"
-          >
-            进入会话
-          </button>
-        </section>
+        <ProjectMap
+          ref="globalMap"
+          v-if="data"
+          :key="`${project.id}-global`"
+          :snapshot="data"
+          :project-id="project.id"
+          scope="global"
+          :connected="client.connection.value === 'connected'"
+          :busy="commandBusy"
+          @select="preview = $event"
+          @enter="enter"
+          @create="(laneId, parentId) => open('session', laneId, parentId)"
+          @command="command"
+          @remote="openBranch"
+        />
       </section>
     </main>
     <AppDialog
       v-if="dialog"
       :title="
-        dialog === 'project' ? '添加本机项目' : dialog === 'session' ? '新建独立会话' : '执行设置'
+        dialog === 'fork'
+          ? '从历史消息分叉'
+          : dialog === 'project'
+            ? '添加本机项目'
+            : dialog === 'session'
+              ? form.parentSessionId
+                ? '新建接续会话'
+                : '新建独立会话'
+              : dialog === 'branch'
+                ? form.track
+                  ? '拉取远端分支到本地'
+                  : '新建 Git 分支'
+                : '执行设置'
       "
       :blocked="busy"
       @close="dialog = null"
@@ -383,7 +497,12 @@ onMounted(() => {
             输入本机已检出的 Git 仓库路径。不会移动或清除未提交修改。
           </p></template
         ><template v-else-if="dialog === 'session'"
-          ><label for="session-title">会话标题</label
+          ><p v-if="form.parentSessionId" class="hint">
+            接续自“{{
+              data?.sessions.find((item) => item.id === form.parentSessionId)?.title
+            }}”。建立新上下文，不复制聊天或自动运行；使用当前代码。
+          </p>
+          <label for="session-title">会话标题</label
           ><input
             id="session-title"
             v-model="form.title"
@@ -408,6 +527,56 @@ onMounted(() => {
           <p id="model-help" class="hint">
             沿用本机 pi 凭据。每次发送固定当前模型，不可用时明确报错。
           </p></template
+        ><template v-else-if="dialog === 'fork'">
+          <p>来源会话：{{ forkSource?.title }}</p>
+          <p id="fork-help" class="hint">
+            继承这条消息之前的历史。下方消息及图片会放入新会话草稿，等待你编辑并发送；不会自动执行。使用当前代码，不回滚工作区。
+          </p>
+          <blockquote class="message-text">{{ forkPoint?.text || '图片消息' }}</blockquote>
+          <p v-if="forkPoint?.images.length" class="hint">
+            包含 {{ forkPoint.images.length }} 张图片。
+          </p>
+          <p class="hint">
+            初始模型：{{ forkSource?.model.provider }} /
+            {{ forkSource?.model.model }}；进入后可修改。
+          </p>
+          <label for="fork-title">分叉会话标题</label>
+          <input
+            id="fork-title"
+            v-model="form.title"
+            maxlength="200"
+            autofocus
+            aria-describedby="fork-help form-error"
+            placeholder="描述新的思路"
+          /> </template
+        ><template v-else-if="dialog === 'branch'">
+          <label for="branch-name">本地分支名称</label
+          ><input
+            id="branch-name"
+            v-model="form.branchName"
+            autofocus
+            maxlength="256"
+            :aria-invalid="Boolean(formError)"
+            aria-describedby="form-error branch-help"
+          />
+          <p v-if="form.track" class="mono">
+            来源：{{ form.startRef.replace('refs/remotes/', '') }}
+          </p>
+          <template v-else
+            ><label for="branch-start">起点分支</label
+            ><select id="branch-start" v-model="form.startRef">
+              <option v-for="lane in lanes" :key="lane.id" :value="lane.ref">
+                {{ lane.ref.replace('refs/heads/', '') }}
+              </option>
+            </select></template
+          >
+          <p id="branch-help" class="hint">
+            {{
+              form.track
+                ? '先获取所选远端，再创建跟踪分支；不合并到当前分支。'
+                : '从起点的已提交 HEAD 创建；未提交改动不会复制。'
+            }}当前工作区不会切换。名称冲突时可使用已有分支，或修改名称。
+          </p> </template
         ><template v-else
           ><label for="concurrency">全局并发上限</label
           ><input
@@ -421,7 +590,7 @@ onMounted(() => {
         >
         <p id="form-error" class="form-error" role="alert">{{ formError }}</p>
         <div class="dialog-actions">
-          <button type="button" @click="dialog = null">取消</button
+          <button type="button" :disabled="busy" @click="dialog = null">取消</button
           ><button
             type="submit"
             class="primary"
@@ -431,11 +600,15 @@ onMounted(() => {
             {{
               busy
                 ? '正在保存…'
-                : dialog === 'settings'
-                  ? '保存设置'
-                  : dialog === 'project'
-                    ? '添加项目'
-                    : '创建会话'
+                : dialog === 'fork'
+                  ? '创建分叉会话'
+                  : dialog === 'settings'
+                    ? '保存设置'
+                    : dialog === 'branch'
+                      ? '创建本地分支'
+                      : dialog === 'project'
+                        ? '添加项目'
+                        : '创建会话'
             }}
           </button>
         </div>

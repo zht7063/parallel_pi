@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,6 +48,12 @@ test(
     await connection.execute('probe-question-tool', []);
     assert.ok(events.some((event) => event.type === 'tool' && event.phase === 'end'));
     assert.ok(events.some((event) => event.type === 'question'));
+    await connection.execute('', [
+      {
+        mimeType: 'image/png',
+        data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aRZkAAAAASUVORK5CYII=',
+      },
+    ]);
     await connection.execute('image', [
       {
         mimeType: 'image/png',
@@ -63,5 +69,61 @@ test(
     );
     assert.deepEqual(await connection.messages(), before);
     assert.equal(existsSync(engine.sessionPath('session')), true);
+    assert.equal((await connection.close()).settled, true);
+    const sourceRef = engine.sessionPath('session');
+    const sourceBytes = readFileSync(sourceRef, 'utf8');
+    const users = before.filter((message) => message.role === 'user');
+    assert.ok(users.filter((message) => message.text).every((message) => message.forkable));
+    assert.ok(users.some((message) => !message.text && message.images.length && !message.forkable));
+    assert.ok(
+      before.filter((message) => message.role !== 'user').every((message) => !message.forkable),
+    );
+    for (const [index, selected] of users.entries()) {
+      if (!selected.forkable) continue;
+      const input = {
+        operationId: `fork-${index}`,
+        directory,
+        sourceRef,
+        targetRef: engine.sessionPath(`child-${index}`),
+        entryId: selected.id,
+      };
+      const forked = await engine.fork(input);
+      assert.deepEqual(forked.draft, { text: selected.text, images: selected.images });
+      assert.deepEqual(
+        forked.messages,
+        before.slice(
+          0,
+          before.findIndex((message) => message.id === selected.id),
+        ),
+      );
+      assert.equal(readFileSync(sourceRef, 'utf8'), sourceBytes);
+      // Lost publication/confirmation recovers the native snapshot, without a new process.
+      rmSync(input.targetRef);
+      assert.deepEqual(await engine.reconcileFork(input), forked);
+      const reopened = await engine.open(
+        { operationId: `child-read-${index}`, directory, sessionRef: input.targetRef },
+        () => {},
+      );
+      try {
+        assert.deepEqual(await reopened.messages(), forked.messages);
+      } finally {
+        assert.equal((await reopened.close()).settled, true);
+      }
+      const original = readFileSync(input.targetRef, 'utf8');
+      writeFileSync(input.targetRef, original + 'conflicting data');
+      await assert.rejects(engine.reconcileFork(input), /differs/);
+      assert.equal(readFileSync(input.targetRef, 'utf8'), original + 'conflicting data');
+    }
+    await assert.rejects(
+      engine.fork({
+        operationId: 'invalid-tool-point',
+        directory,
+        sourceRef,
+        targetRef: engine.sessionPath('invalid'),
+        entryId: before.find((message) => message.role === 'tool')!.id,
+      }),
+      /did not complete/,
+    );
+    assert.equal(readFileSync(sourceRef, 'utf8'), sourceBytes);
   },
 );

@@ -13,7 +13,7 @@ import { openStore, createAttachmentStore, createHandoffStore } from '@parallel-
 import { createGit } from '@parallel-pi/infra-git';
 import { createSupervisor } from '@parallel-pi/infra-platform';
 import { createEngine } from '@parallel-pi/infra-pi';
-import type { Harness } from '@parallel-pi/application';
+import type { Harness, ImageInput } from '@parallel-pi/application';
 
 const fixture = fileURLToPath(new URL('../probes/fixture-extension.mjs', import.meta.url));
 async function until(predicate: () => boolean, description: string) {
@@ -419,3 +419,383 @@ test(
     await until(() => state(app, next.id).state === 'succeeded', 'next run after stopped question');
   },
 );
+
+test(
+  'continuation keeps a stable path and source relation but starts empty, including creation recovery and changed-model retries',
+  { timeout: 30000 },
+  async (t) => {
+    const { root, directory, app, store, deps } = setup();
+    let current = app;
+    t.after(async () => {
+      await current.close();
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    });
+    await app.initialize();
+    await app.addProject(directory);
+    const lane = app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/main')!;
+    const parent = await app.createSession(lane.id, 'Parent', model, 'parent-create');
+    const run = app.enqueue({
+      requestId: 'parent-prompt',
+      sessionId: parent.id,
+      text: 'parent-only-context',
+      attachmentIds: [],
+    });
+    await until(() => state(app, run.id).state === 'succeeded', 'parent result');
+    app.setSessionModel(parent.id, { ...model, model: 'probe-b' });
+    assert.equal(
+      (await app.createSession(lane.id, 'Parent', model, 'parent-create')).id,
+      parent.id,
+    );
+    await assert.rejects(
+      app.createSession(lane.id, 'Parent', { ...model, model: 'probe-b' }, 'parent-create'),
+      /conflicts/,
+    );
+    const child = await app.createSession(
+      lane.id,
+      'Continuation',
+      model,
+      'continue-create',
+      parent.id,
+    );
+    assert.deepEqual(child.origin, { kind: 'continue', sessionId: parent.id });
+    assert.equal(child.pathId, parent.pathId);
+    assert.deepEqual(child.messages, []);
+    assert.equal(app.snapshot().state.runs.length, 1);
+    const independent = await app.createSession(lane.id, 'Independent', model, 'root-create');
+    assert.notEqual(independent.pathId, child.pathId);
+    assert.equal(independent.origin, undefined);
+    const other = app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/other')!;
+    await assert.rejects(
+      app.createSession(
+        other.id,
+        'Invalid cross-branch continuation',
+        model,
+        'invalid-continue',
+        parent.id,
+      ),
+      /same Git branch/,
+    );
+    await app.close();
+    store.transaction((tx) => {
+      tx.state.operations.find((operation) => operation.sessionId === child.id)!.state = 'pending';
+      tx.state.sessions.find((session) => session.id === child.id)!.state = 'creating';
+    });
+    current = createHarness(deps);
+    await current.initialize();
+    const recovered = current.snapshot().state.sessions.find((session) => session.id === child.id)!;
+    assert.equal(recovered.state, 'ready');
+    assert.deepEqual(recovered.origin, child.origin);
+    assert.equal(recovered.pathId, parent.pathId);
+    assert.equal(
+      (await current.createSession(lane.id, 'Continuation', model, 'continue-create', parent.id))
+        .id,
+      child.id,
+    );
+    await current.resume(lane.id);
+    const next = current.enqueue({
+      requestId: 'child-prompt',
+      sessionId: child.id,
+      text: 'new empty context',
+      attachmentIds: [],
+    });
+    await until(() => state(current, next.id).state === 'succeeded', 'continued session result');
+    const messages = current
+      .snapshot()
+      .state.sessions.find((session) => session.id === child.id)!.messages;
+    assert.equal(messages.filter((message) => message.role === 'user').length, 1);
+    assert.equal(JSON.stringify(messages).includes('parent-only-context'), false);
+    assert.equal(readFileSync(join(directory, 'code'), 'utf8'), 'dirty');
+  },
+);
+
+test(
+  'branch intentions preserve dirty work, fetch selected remote tips, retain stale caches and reconcile completed writes',
+  { timeout: 30000 },
+  async (t) => {
+    const { root, directory, app, store, deps } = setup();
+    let current = app;
+    t.after(async () => {
+      await current.close();
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    });
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-C', directory, ...args], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim();
+    const remote = join(root, 'remote.git');
+    execFileSync('git', ['clone', '--bare', directory, remote], { stdio: 'pipe' });
+    const remoteGit = (...args: string[]) =>
+      execFileSync('git', ['-C', remote, ...args], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim();
+    remoteGit('update-ref', 'refs/heads/topic', git('rev-parse', 'HEAD'));
+    git('remote', 'add', 'origin', remote);
+    await app.initialize();
+    const project = await app.addProject(directory);
+    const lane = app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/main')!;
+    const input = {
+      requestId: 'new-branch',
+      laneId: lane.id,
+      name: 'bad name',
+      startRef: lane.ref,
+      track: false,
+    };
+    const count = app.snapshot().state.operations.length;
+    await assert.rejects(app.createBranch(input));
+    assert.equal(app.snapshot().state.operations.length, count);
+    const created = await app.createBranch({ ...input, name: 'feature' });
+    assert.equal(created.ref, 'refs/heads/feature');
+    assert.deepEqual(await app.createBranch({ ...input, name: 'feature' }), created);
+    await assert.rejects(app.createBranch({ ...input, name: 'different' }), /conflicts/);
+    assert.equal(
+      app.snapshot().state.lanes.find((item) => item.ref === created.ref)!.directory,
+      null,
+    );
+    assert.equal(readFileSync(join(directory, 'code'), 'utf8'), 'dirty');
+    assert.equal(git('symbolic-ref', 'HEAD'), lane.ref);
+    await app.refreshRemotes(lane.id);
+    assert.ok(
+      app
+        .snapshot()
+        .state.projects[0]!.remoteBranches!.some(
+          (branch) => branch.ref === 'refs/remotes/origin/topic',
+        ),
+    );
+    const tree = remoteGit('rev-parse', 'HEAD^{tree}');
+    const old = remoteGit('rev-parse', 'refs/heads/topic');
+    const tip = remoteGit(
+      '-c',
+      'user.name=Test',
+      '-c',
+      'user.email=test@example.invalid',
+      'commit-tree',
+      tree,
+      '-p',
+      old,
+      '-m',
+      'remote advance',
+    );
+    remoteGit('update-ref', 'refs/heads/topic', tip);
+    await app.createBranch({
+      requestId: 'import-topic',
+      laneId: lane.id,
+      name: 'local-topic',
+      startRef: 'refs/remotes/origin/topic',
+      track: true,
+    });
+    assert.equal(git('rev-parse', 'refs/heads/local-topic'), tip);
+    assert.equal(
+      git('for-each-ref', '--format=%(upstream)', 'refs/heads/local-topic'),
+      'refs/remotes/origin/topic',
+    );
+    assert.equal(
+      app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/local-topic')!.upstream,
+      'refs/remotes/origin/topic',
+    );
+    const cache = app.snapshot().state.projects[0]!.remoteBranches;
+    git('remote', 'set-url', 'origin', join(root, 'missing.git'));
+    await assert.rejects(app.refreshRemotes(lane.id));
+    assert.deepEqual(app.snapshot().state.projects[0]!.remoteBranches, cache);
+    assert.ok(app.snapshot().state.projects[0]!.remoteError);
+    assert.equal(app.snapshot().state.lanes.find((item) => item.id === lane.id)!.state, 'ready');
+    await app.close();
+    store.transaction((tx) => {
+      tx.state.operations.find((operation) => operation.requestId === 'new-branch')!.state =
+        'pending';
+      tx.state.lanes = tx.state.lanes.filter((item) => item.ref !== created.ref);
+    });
+    current = createHarness(deps);
+    await current.initialize();
+    assert.equal(
+      current.snapshot().state.lanes.filter((item) => item.ref === created.ref).length,
+      1,
+    );
+    assert.equal(
+      current.snapshot().state.operations.find((operation) => operation.requestId === 'new-branch')!
+        .state,
+      'completed',
+    );
+    assert.equal(
+      current.snapshot().state.lanes.find((item) => item.id === lane.id)!.state,
+      'paused',
+    );
+    assert.equal(current.snapshot().state.projects[0]!.id, project.id);
+    assert.equal(readFileSync(join(directory, 'code'), 'utf8'), 'dirty');
+  },
+);
+
+test(
+  'fork uses an immutable native point, keeps image drafts unexecuted and reconciles a lost confirmation',
+  { timeout: 30000 },
+  async (t) => {
+    const { root, directory, app, store, deps } = setup();
+    let current = app;
+    t.after(async () => {
+      await current.close();
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    });
+    await app.initialize();
+    await app.addProject(directory);
+    const lane = app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/main')!;
+    const source = await app.createSession(lane.id, 'Source', model);
+    const image: ImageInput = {
+      mimeType: 'image/png',
+      data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aRZkAAAAASUVORK5CYII=',
+    };
+    const attachment = app.upload(image);
+    for (const text of ['first image', 'second point']) {
+      const run = app.enqueue({
+        sessionId: source.id,
+        requestId: text.replaceAll(' ', '-'),
+        text,
+        attachmentIds: [attachment.id],
+      });
+      await until(() => state(app, run.id).state === 'succeeded', text);
+    }
+    const messages = app.snapshot().state.sessions.find((item) => item.id === source.id)!.messages;
+    const first = messages.find((item) => item.role === 'user')!;
+    const second = messages.filter((item) => item.role === 'user')[1]!;
+    app.setSessionModel(source.id, { ...model, model: 'probe-b' });
+    const child = await app.forkSession(source.id, first.id, 'First fork', 'fork-first');
+    assert.deepEqual(child.messages, []);
+    assert.notEqual(child.pathId, source.pathId);
+    assert.deepEqual(child.origin, { kind: 'fork', sessionId: source.id, entryId: first.id });
+    assert.equal(child.model.model, 'probe-b');
+    assert.equal(
+      (await app.forkSession(source.id, first.id, 'First fork', 'fork-first')).id,
+      child.id,
+    );
+    await assert.rejects(
+      app.forkSession(source.id, second.id, 'First fork', 'fork-first'),
+      /conflicts/,
+    );
+    await assert.rejects(
+      app.forkSession(
+        source.id,
+        messages.find((item) => item.role === 'assistant')!.id,
+        '',
+        'invalid',
+      ),
+      /fork point/,
+    );
+    const draft = app.snapshot().state.drafts.find((item) => item.sessionId === child.id)!;
+    assert.equal(draft.text, first.text);
+    assert.deepEqual(app.attachment(draft.attachmentIds[0]!), image);
+    assert.equal(app.snapshot().state.runs.length, 2);
+    await app.close();
+    current = createHarness({
+      ...deps,
+      engine: {
+        ...deps.engine,
+        async fork(input) {
+          await deps.engine.fork(input);
+          throw new Error('injected lost application confirmation');
+        },
+      },
+    });
+    await current.initialize();
+    await assert.rejects(
+      current.forkSession(source.id, second.id, 'Recovered fork', 'fork-second'),
+      /lost application/,
+    );
+    const pending = current
+      .snapshot()
+      .state.sessions.find((item) => item.creationRequestId === 'fork-second')!;
+    assert.equal(pending.state, 'creating');
+    assert.equal(
+      current.snapshot().state.lanes.find((item) => item.id === lane.id)!.state,
+      'recovering',
+    );
+    await current.close();
+    current = createHarness(deps);
+    await current.initialize();
+    const restored = current.snapshot().state.sessions.find((item) => item.id === pending.id)!;
+    assert.equal(restored.state, 'ready');
+    assert.deepEqual(
+      restored.messages,
+      messages.slice(
+        0,
+        messages.findIndex((item) => item.id === second.id),
+      ),
+    );
+    assert.equal(current.snapshot().state.runs.length, 2);
+    assert.equal(
+      current.snapshot().state.lanes.find((item) => item.id === lane.id)!.state,
+      'paused',
+    );
+    assert.equal(
+      current.snapshot().state.drafts.filter((item) => item.sessionId === restored.id).length,
+      1,
+    );
+    await current.resume(lane.id);
+    const next = current.enqueue({
+      sessionId: restored.id,
+      requestId: 'child-run',
+      text: 'child next',
+      attachmentIds: [],
+    });
+    await until(() => state(current, next.id).state === 'succeeded', 'fork child execution');
+    const childMessages = current
+      .snapshot()
+      .state.sessions.find((item) => item.id === restored.id)!.messages;
+    assert.ok(!childMessages.some((item) => item.role === 'user' && item.id === second.id));
+    assert.deepEqual(
+      current.snapshot().state.sessions.find((item) => item.id === source.id)!.messages,
+      messages,
+    );
+    assert.equal(readFileSync(join(directory, 'code'), 'utf8'), 'dirty');
+  },
+);
+
+test('history pages keep stable entry cursors when newer messages arrive and snapshots contain only the recent page', async (t) => {
+  const { root, directory, app, store } = setup();
+  t.after(async () => {
+    await app.close();
+    store.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+  await app.initialize();
+  await app.addProject(directory);
+  const lane = app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/main')!;
+  const session = await app.createSession(lane.id, 'Paged cache', model);
+  // Application-cache fixture: native history/fork compatibility has separate real-engine coverage.
+  const messages = Array.from({ length: 95 }, (_, index) => ({
+    id: `entry-${index}`,
+    role: 'user' as const,
+    text: `message ${index}`,
+    images: [],
+    forkable: true,
+  }));
+  store.transaction((tx) => {
+    tx.state.sessions.find((item) => item.id === session.id)!.messages = messages;
+  });
+  const recent = app.history(session.id);
+  assert.equal(recent.messages.length, 40);
+  assert.equal(recent.messages[0]!.id, 'entry-55');
+  store.transaction((tx) => {
+    tx.state.sessions
+      .find((item) => item.id === session.id)!
+      .messages.push({ ...messages[0]!, id: 'new-entry' });
+  });
+  const older = app.history(session.id, recent.messages[0]!.id);
+  assert.deepEqual(
+    older.messages.map((message) => message.id),
+    messages.slice(15, 55).map((message) => message.id),
+  );
+  assert.equal(older.total, 96);
+  const first = app.history(session.id, older.messages[0]!.id);
+  assert.equal(first.messages.length, 15);
+  assert.equal(first.more, false);
+  assert.throws(() => app.history(session.id, 'unknown'), /cursor/);
+  assert.throws(() => app.history(session.id, undefined, 101), /page size/);
+  const { projectSnapshot } = await import('../packages/transport/src/workspace.ts');
+  const wire = projectSnapshot(app).sessions.find((item) => item.id === session.id)!;
+  assert.equal(wire.messageCount, 96);
+  assert.equal(wire.messages.length, 40);
+  assert.equal(wire.messages.at(-1)!.id, 'new-entry');
+});

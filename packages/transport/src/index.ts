@@ -107,6 +107,16 @@ export function createHttpServer(application: Application, webRoot: string, work
           });
         }
 
+        if (url.pathname === '/api/history' && request.method === 'GET')
+          return json(
+            response,
+            200,
+            workspace.history(
+              url.searchParams.get('sessionId') ?? '',
+              url.searchParams.get('before') ?? undefined,
+              Number(url.searchParams.get('limit') ?? 40),
+            ),
+          );
         if (url.pathname === '/api/snapshot' && request.method === 'GET')
           return json(response, 200, projectSnapshot(workspace));
         if (url.pathname === '/api/command' && request.method === 'POST')

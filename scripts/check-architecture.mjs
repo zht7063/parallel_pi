@@ -98,7 +98,12 @@ export function checkArchitecture(root) {
         const name = specifier.text;
         if (name.startsWith('.')) {
           const target = resolve(dirname(file), name);
-          if (!target.startsWith(sourceRoot + sep))
+          // Pinned native boundary documented in docs/native-contracts.md.
+          const nativeSessionManager =
+            owner.name === 'infra-pi' &&
+            target ===
+              resolve(root, 'vendor/pi/packages/coding-agent/dist/core/session-manager.js');
+          if (!nativeSessionManager && !target.startsWith(sourceRoot + sep))
             errors.push(`${label}: relative import escapes package source: ${name}`);
           if (!existsSync(target)) errors.push(`${label}: unresolved import ${name}`);
           edges.push(target);

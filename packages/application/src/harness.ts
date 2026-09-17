@@ -8,6 +8,8 @@ import type {
   RunHandoff,
   AttachmentStore,
   Engine,
+  ForkInput,
+  ForkResult,
   EngineConnection,
   EngineEvent,
   ImageInput,
@@ -79,16 +81,20 @@ export function createHarness(deps: {
   }
   function syncBranches(projectId: string, facts: RepositoryFacts) {
     store.transaction((tx) => {
+      tx.state.projects.find((item) => item.id === projectId)!.remoteBranches =
+        facts.remoteBranches;
       for (const branch of facts.branches) {
         const existing = tx.state.lanes.find(
           (item) => item.projectId === projectId && item.ref === branch.ref,
         );
         const checked = facts.worktrees.find((item) => item.ref === branch.ref && !item.locked);
+        if (existing) existing.upstream = branch.upstream;
         if (!existing)
           tx.state.lanes.push({
             id: runtime.id(),
             projectId,
             ref: branch.ref,
+            upstream: branch.upstream,
             directory: checked?.directory ?? null,
             state: 'ready',
             reason: null,
@@ -118,6 +124,38 @@ export function createHarness(deps: {
       release();
       pump();
     }
+  }
+  function forkInput(operation: Operation): ForkInput {
+    const child = session(operation.sessionId!);
+    if (child.origin?.kind !== 'fork') throw new Error('Fork origin is missing');
+    return {
+      operationId: operation.id,
+      directory: lane(operation.laneId).directory!,
+      sourceRef: session(child.origin.sessionId).nativeRef,
+      targetRef: operation.target,
+      entryId: child.origin.entryId,
+    };
+  }
+  function finishFork(operation: Operation, result: ForkResult | null) {
+    const images = result?.draft.images.map((image) => attachments.put(image)) ?? [];
+    store.transaction((tx) => {
+      const child = tx.state.sessions.find((item) => item.id === operation.sessionId)!;
+      child.state = result ? 'ready' : 'error';
+      if (result) {
+        child.messages = result.messages;
+        tx.state.attachments.push(...images);
+        tx.state.drafts.push({
+          sessionId: child.id,
+          revision: 1,
+          text: result.draft.text,
+          attachmentIds: images.map((image) => image.id),
+        });
+      }
+      tx.state.operations.find((item) => item.id === operation.id)!.state = result
+        ? 'completed'
+        : 'failed';
+      tx.emit('session.forked', { sessionId: child.id, restored: Boolean(result) });
+    });
   }
   function beginOperation(
     laneId: string,
@@ -420,6 +458,38 @@ export function createHarness(deps: {
           continue;
         }
         try {
+          if (operation.kind === 'create-branch' || operation.kind === 'fetch-remotes') {
+            const owner = project(lane(laneId).projectId);
+            let found = false;
+            if (operation.kind === 'create-branch') {
+              const facts = await git.inspect(owner.directory);
+              const branch = facts.branches.find((item) => item.ref === operation.target);
+              if (
+                branch &&
+                (branch.head !== operation.expectedHead ||
+                  (operation.upstream && branch.upstream !== operation.upstream))
+              )
+                throw new Error(
+                  'Created branch differs from its recorded intent; inspect without overwriting it',
+                );
+              found = Boolean(branch);
+              syncBranches(owner.id, facts);
+            }
+            store.transaction((tx) => {
+              tx.state.operations.find((item) => item.id === operation.id)!.state = found
+                ? 'completed'
+                : 'failed';
+              if (operation.kind === 'fetch-remotes')
+                tx.state.projects.find((item) => item.id === owner.id)!.remoteError =
+                  '远端刷新被中断；列表可能过期，请明确重试刷新。';
+              tx.emit('operation.reconciled', { operationId: operation.id, found });
+            });
+            continue;
+          }
+          if (operation.kind === 'fork-session') {
+            finishFork(operation, await engine.reconcileFork(forkInput(operation)));
+            continue;
+          }
           if (operation.kind === 'save-memory') {
             store.transaction((tx) => {
               tx.state.operations.find((item) => item.id === operation.id)!.state = 'failed';
@@ -467,6 +537,36 @@ export function createHarness(deps: {
       maintenance.delete(laneId);
     }
   }
+  async function refreshRemoteRefs(laneId: string, directory: string, remote?: string) {
+    const owner = project(lane(laneId).projectId);
+    const operation = beginOperation(laneId, 'fetch-remotes', directory);
+    try {
+      await git.fetchRemotes(directory, operation.id, remote);
+      syncBranches(owner.id, await git.inspect(directory));
+      store.transaction((tx) => {
+        tx.state.operations.find((item) => item.id === operation.id)!.state = 'completed';
+        const project = tx.state.projects.find((item) => item.id === owner.id)!;
+        project.remoteFetchedAt = runtime.now();
+        project.remoteError = null;
+        tx.emit('project.remotes', { projectId: owner.id });
+      });
+    } catch (error) {
+      const proof = await supervisor.recover(operation.id);
+      store.transaction((tx) => {
+        const record = tx.state.operations.find((item) => item.id === operation.id)!;
+        record.state = proof.settled ? 'failed' : 'uncertain';
+        record.error = error instanceof Error ? error.message : 'Remote refresh failed';
+        tx.state.projects.find((item) => item.id === owner.id)!.remoteError = record.error;
+        if (!proof.settled) {
+          const branch = tx.state.lanes.find((item) => item.id === laneId)!;
+          branch.state = 'recovering';
+          branch.reason = proof.reason;
+        }
+        tx.emit('project.remotes', { projectId: owner.id });
+      });
+      throw error;
+    }
+  }
   const memoryService = createMemoryService({
     store,
     memory: deps.memory,
@@ -478,6 +578,18 @@ export function createHarness(deps: {
   return {
     ...memoryService,
     snapshot,
+    history(sessionId: string, before?: string, limit = 40) {
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+        throw new Error('History page size must be between 1 and 100');
+      const messages = session(sessionId).messages;
+      const end =
+        before === undefined
+          ? messages.length
+          : messages.findIndex((message) => message.id === before);
+      if (end < 0) throw new Error('History cursor no longer exists; reload this session');
+      const start = Math.max(0, end - limit);
+      return { messages: messages.slice(start, end), total: messages.length, more: start > 0 };
+    },
     events: (after: number) => store.events(after),
     status: () => ({ concurrency: snapshot().state.concurrency }),
     async initialize() {
@@ -554,24 +666,133 @@ export function createHarness(deps: {
       const owner = project(id);
       syncBranches(id, await git.inspect(owner.directory));
     },
-    async createSession(laneId: string, title: string, model: ModelSelection, requestId?: string) {
+    async createBranch(input: {
+      requestId: string;
+      laneId: string;
+      name: string;
+      startRef: string;
+      track: boolean;
+    }) {
+      const fingerprint = JSON.stringify([input.laneId, input.name, input.startRef, input.track]);
+      const previous = snapshot().state.operations.find(
+        (operation) => operation.requestId === input.requestId,
+      );
+      if (previous) {
+        if (previous.fingerprint !== fingerprint)
+          throw new Error('Branch request ID conflicts with earlier content');
+        if (previous.state !== 'completed')
+          throw new Error('Previous branch creation needs reconciliation before another attempt');
+        return { ref: previous.target };
+      }
+      return withLane(input.laneId, async () => {
+        const owner = project(lane(input.laneId).projectId);
+        const directory = await prepare(input.laneId);
+        await git.checkBranchName(directory, input.name);
+        let facts = await git.inspect(directory);
+        if (facts.branches.some((branch) => branch.ref === `refs/heads/${input.name}`))
+          throw new Error('Branch already exists; choose another name or use the existing branch');
+        if (input.track) {
+          const remote = facts.remoteBranches.find(
+            (branch) => branch.ref === input.startRef,
+          )?.remote;
+          if (!remote) throw new Error('Remote branch no longer exists; refresh the list');
+          await refreshRemoteRefs(input.laneId, directory, remote);
+          facts = await git.inspect(directory);
+        }
+        const start = input.track
+          ? facts.remoteBranches.find((branch) => branch.ref === input.startRef)
+          : facts.branches.find((branch) => branch.ref === input.startRef);
+        if (!start) throw new Error('Starting branch no longer exists; refresh the list');
+        const operation: Operation = {
+          id: runtime.id(),
+          laneId: input.laneId,
+          kind: 'create-branch',
+          target: `refs/heads/${input.name}`,
+          requestId: input.requestId,
+          fingerprint,
+          expectedHead: start.head,
+          ...(input.track ? { upstream: start.ref } : {}),
+          state: 'pending',
+          error: null,
+          createdAt: runtime.now(),
+        };
+        store.transaction((tx) => {
+          tx.state.operations.push(operation);
+          tx.emit('operation.started', { operationId: operation.id });
+        });
+        try {
+          await git.createBranch(
+            directory,
+            input.name,
+            input.track ? start.ref : start.head,
+            operation.id,
+            input.track,
+          );
+          const after = await git.inspect(directory);
+          const created = after.branches.find((branch) => branch.ref === operation.target);
+          if (
+            !created ||
+            created.head !== start.head ||
+            (input.track && created.upstream !== start.ref)
+          )
+            throw new Error('New branch does not match its creation intent');
+          syncBranches(owner.id, after);
+          store.transaction((tx) => {
+            tx.state.operations.find((item) => item.id === operation.id)!.state = 'completed';
+            tx.emit('operation.completed', { operationId: operation.id });
+          });
+          return { ref: operation.target };
+        } catch (error) {
+          setLane(
+            input.laneId,
+            'recovering',
+            error instanceof Error ? error.message : 'Branch creation needs reconciliation',
+          );
+          throw error;
+        }
+      });
+    },
+    async refreshRemotes(laneId: string) {
+      return withLane(laneId, async () => refreshRemoteRefs(laneId, await prepare(laneId)));
+    },
+    async createSession(
+      laneId: string,
+      title: string,
+      model: ModelSelection,
+      requestId?: string,
+      parentSessionId?: string,
+    ) {
+      const fixedModel = resolveModel(model);
+      const fingerprint = JSON.stringify([
+        laneId,
+        title.trim() || '新会话',
+        fixedModel.provider,
+        fixedModel.model,
+        parentSessionId ?? null,
+      ]);
       if (requestId) {
         const existing = snapshot().state.sessions.find(
           (item) => item.creationRequestId === requestId,
         );
         if (existing) {
-          if (
-            existing.laneId !== laneId ||
-            existing.title !== (title.trim() || '新会话') ||
-            existing.model.provider !== model.provider ||
-            existing.model.model !== model.model
-          )
+          const original =
+            existing.creationFingerprint ??
+            JSON.stringify([
+              existing.laneId,
+              existing.title,
+              existing.model.provider,
+              existing.model.model,
+              existing.origin?.sessionId ?? null,
+            ]);
+          if (original !== fingerprint)
             throw new Error('Session request ID conflicts with earlier content');
           return existing;
         }
       }
+      const parent = parentSessionId ? session(parentSessionId) : undefined;
+      if (parent && (parent.laneId !== laneId || parent.state !== 'ready'))
+        throw new Error('Continuation source must be a ready session on the same Git branch');
       return withLane(laneId, async () => {
-        const fixedModel = resolveModel(model);
         const directory = await prepare(laneId);
         const id = runtime.id(),
           nativeRef = engine.sessionPath(id);
@@ -583,6 +804,9 @@ export function createHarness(deps: {
           model: fixedModel,
           state: 'creating',
           creationRequestId: requestId,
+          creationFingerprint: fingerprint,
+          pathId: parent ? (parent.pathId ?? parent.id) : runtime.id(),
+          ...(parent ? { origin: { kind: 'continue' as const, sessionId: parent.id } } : {}),
           createdAt: runtime.now(),
           messages: [],
         };
@@ -609,6 +833,52 @@ export function createHarness(deps: {
             laneId,
             'recovering',
             cause instanceof Error ? cause.message : 'Session creation interrupted',
+          );
+          throw cause;
+        }
+      });
+    },
+    async forkSession(sourceId: string, entryId: string, title: string, requestId: string) {
+      const fingerprint = JSON.stringify(['fork', sourceId, entryId, title.trim() || '分叉会话']);
+      const existing = snapshot().state.sessions.find(
+        (item) => item.creationRequestId === requestId,
+      );
+      if (existing) {
+        if (existing.creationFingerprint !== fingerprint)
+          throw new Error('Session request ID conflicts with earlier content');
+        return existing;
+      }
+      const source = session(sourceId);
+      if (source.state !== 'ready') throw new Error('Fork source must be ready');
+      const point = source.messages.find((message) => message.id === entryId);
+      if (!point?.forkable) throw new Error('Choose an available native fork point');
+      return withLane(source.laneId, async () => {
+        await prepare(source.laneId);
+        const id = runtime.id(),
+          nativeRef = engine.sessionPath(id);
+        const initial: Session = {
+          id,
+          laneId: source.laneId,
+          title: title.trim() || '分叉会话',
+          nativeRef,
+          creationRequestId: requestId,
+          creationFingerprint: fingerprint,
+          pathId: runtime.id(),
+          origin: { kind: 'fork', sessionId: source.id, entryId },
+          state: 'creating',
+          model: { ...source.model },
+          createdAt: runtime.now(),
+          messages: [],
+        };
+        const operation = beginOperation(source.laneId, 'fork-session', nativeRef, id, initial);
+        try {
+          finishFork(operation, await engine.fork(forkInput(operation)));
+          return session(id);
+        } catch (cause) {
+          setLane(
+            source.laneId,
+            'recovering',
+            cause instanceof Error ? cause.message : 'Fork interrupted',
           );
           throw cause;
         }
