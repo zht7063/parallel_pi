@@ -22,7 +22,7 @@ npm start
 
 `PARALLEL_PI_DATA_DIR` 可指定应用私有数据目录，默认 `$XDG_DATA_HOME/parallel_pi`（未设置时为 `~/.local/share/parallel_pi`）。其中 SQLite 保存元数据、待写意图和事件，`sessions/` 保存原生会话，`attachments/` 保存图片，`handoffs/` 保存每次运行的独立交接记录，`supervision/` 保存进程收束证据。不要在运行中移动或删除这些目录。
 
-交接保存失败会暂停该分支。可以重试保存，或明确暂不保存后恢复队列；这些动作不会重跑原任务。不能核验进程收束时保持 recovering，必须先恢复核验。完整备份/升级流程和 MWF 配置界面仍待 M4/M5 完成。
+交接保存失败会暂停该分支。可以重试保存，或明确暂不保存后恢复队列；这些动作不会重跑原任务。不能核验进程收束时保持 recovering，必须先恢复核验。停机备份、恢复与手动升级流程见 [备份与升级](backup-upgrade.md)；MWF 初始化、召回和修订已接入。
 
 ## 检查
 
@@ -48,7 +48,7 @@ LD_LIBRARY_PATH=/tmp/dayweave-browser-libs/root/usr/lib/x86_64-linux-gnu npm run
 - `packages/domain` 不依赖 Node、浏览器或外部包，当前包含运行状态迁移、模型选择与公平调度规则。
 - `packages/application` 协调用例；通过自己拥有的能力接口注入适配器，不能导入基础设施实现。
 - `packages/contracts` 是公共 DTO；`packages/transport` 负责 HTTP、会话校验和静态 UI 服务。
-- `apps/server` 装配；`apps/web` 仅消费公共协议。现已接入 infra-storage、infra-git、infra-platform 和 infra-pi；infra-mwf 已接入原生 add/propose 保存；初始化、召回和修订配置仍待实现。
+- `apps/server` 装配；`apps/web` 仅消费公共协议。现已接入 infra-storage、infra-git、infra-platform 和 infra-pi；infra-mwf 已接入原生 add/propose、初始化、召回、修订与自动 agent 记忆。
 - workspace 只通过包公开入口访问；`scripts/check-architecture.mjs` 检查所有 src 的静态/动态字面导入与类型导入、禁止跨包相对路径和循环。
 
 ## 固定版本契约
