@@ -81,6 +81,12 @@ test('real UI adds a dirty repository, executes images, preserves drafts, retrie
       .getByLabel('添加图片', { exact: true })
       .setInputFiles('probes/fixtures/red-square.png');
     await expect(page.getByRole('button', { name: '移除图片' })).toHaveCount(1);
+    await page.getByRole('button', { name: '移除图片' }).click();
+    await expect(page.getByRole('button', { name: '移除图片' })).toHaveCount(0);
+    await page
+      .getByLabel('添加图片', { exact: true })
+      .setInputFiles('probes/fixtures/red-square.png');
+    await expect(page.getByRole('button', { name: '移除图片' })).toHaveCount(1);
     await composer.fill('浏览器图片验证');
     await page.getByRole('button', { name: '发送', exact: true }).click();
     await expect(page.locator('.run-row strong').first()).toHaveText('执行完成', {

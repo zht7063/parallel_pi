@@ -5,6 +5,7 @@ export default function (pi) {
   const faux = fauxProvider({ provider: 'parallel-probe', models: [
     { id: 'probe-a', input: ['text', 'image'] },
     { id: 'probe-b', input: ['text', 'image'] },
+    { id: 'probe-text-only', input: ['text'] },
   ] });
   pi.registerProvider(faux.provider.id, {
     api: faux.api, baseUrl: faux.getModel().baseUrl, apiKey: 'local-fixture',

@@ -1712,3 +1712,137 @@ test(
     assert.equal(readFileSync(join(directory, 'code'), 'utf8'), 'dirty');
   },
 );
+
+test(
+  'waiting runs retain global slots across concurrency changes and failure pauses only its own lane',
+  { timeout: 45000 },
+  async (t) => {
+    const { root, directory, app, store } = setup();
+    t.after(async () => {
+      await app.close();
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    });
+    await app.initialize();
+    await app.addProject(directory);
+    const main = app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/main')!;
+    const other = app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/other')!;
+    await app.createBranch({
+      laneId: main.id,
+      requestId: 'third-lane',
+      name: 'third',
+      startRef: main.ref,
+      track: false,
+    });
+    const third = app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/third')!;
+    const a = await app.createSession(main.id, 'Waiting A', model);
+    const b = await app.createSession(other.id, 'Waiting B', model);
+    const c = await app.createSession(third.id, 'Later failure', model);
+    const d = await app.createSession(main.id, 'Serial after A', model);
+    const enqueue = (sessionId: string, text: string) =>
+      app.enqueue({ requestId: randomUUID(), sessionId, text, attachmentIds: [] });
+    assert.equal(app.status().concurrency, 2);
+    const first = enqueue(a.id, 'probe-question-tool');
+    const second = enqueue(b.id, 'probe-question-tool');
+    const failure = enqueue(c.id, 'probe-failed-turn');
+    const serial = enqueue(d.id, 'same branch after waiting');
+    await until(
+      () =>
+        state(app, first.id).state === 'waiting_input' &&
+        state(app, second.id).state === 'waiting_input',
+      'two occupied question slots',
+    );
+    assert.equal(state(app, failure.id).state, 'queued');
+    assert.equal(state(app, serial.id).state, 'queued');
+    app.setConcurrency(1);
+    assert.equal(state(app, first.id).state, 'waiting_input');
+    assert.equal(
+      state(app, second.id).state,
+      'waiting_input',
+      'reducing the limit must not cancel existing runs',
+    );
+    app.answer(second.id, state(app, second.id).question!.id, 'continue');
+    await until(() => state(app, second.id).state === 'succeeded', 'second question answered');
+    assert.equal(
+      state(app, failure.id).state,
+      'queued',
+      'one waiting run consumes the remaining slot',
+    );
+    assert.equal(
+      state(app, serial.id).state,
+      'queued',
+      'another session cannot overlap the waiting lane',
+    );
+    app.setConcurrency(2);
+    await until(
+      () => state(app, failure.id).state === 'failed',
+      'third lane executes after capacity increases',
+    );
+    assert.equal(app.snapshot().state.lanes.find((item) => item.id === third.id)!.state, 'paused');
+    assert.equal(state(app, first.id).state, 'waiting_input');
+    assert.equal(app.snapshot().state.lanes.find((item) => item.id === main.id)!.state, 'ready');
+    assert.equal(state(app, serial.id).state, 'queued');
+    app.answer(first.id, state(app, first.id).question!.id, 'continue');
+    await until(
+      () => state(app, serial.id).state === 'succeeded',
+      'unrelated lane continues after failure',
+    );
+    assert.equal(state(app, first.id).state, 'succeeded');
+    assert.equal(readFileSync(join(directory, 'code'), 'utf8'), 'dirty');
+  },
+);
+
+test(
+  'a text-only native model rejects images before prompt while retaining the accepted attachment',
+  { timeout: 30000 },
+  async (t) => {
+    const { root, directory, app, store, deps } = setup();
+    t.after(async () => {
+      await app.close();
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    });
+    await app.initialize();
+    await app.addProject(directory);
+    const lane = app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/main')!;
+    const session = await app.createSession(lane.id, 'Text only', {
+      ...model,
+      model: 'probe-text-only',
+    });
+    const data = readFileSync(
+      new URL('../probes/fixtures/red-square.png', import.meta.url),
+    ).toString('base64');
+    const attachment = app.upload({ mimeType: 'image/png', data });
+    const run = app.enqueue({
+      requestId: 'image-refused',
+      sessionId: session.id,
+      text: 'must-not-reach-model',
+      attachmentIds: [attachment.id],
+    });
+    await until(() => state(app, run.id).state === 'failed', 'native image capability rejection');
+    assert.match(state(app, run.id).error!, /does not support images/);
+    assert.equal(state(app, run.id).model.model, 'probe-text-only');
+    assert.deepEqual(state(app, run.id).attachmentIds, [attachment.id]);
+    assert.equal(deps.attachments.get(attachment.id).data, data);
+    assert.equal(app.history(session.id).messages.length, 0);
+    assert.doesNotMatch(
+      readFileSync(deps.engine.sessionPath(session.id), 'utf8'),
+      /must-not-reach-model/,
+    );
+    assert.equal(app.snapshot().state.lanes.find((item) => item.id === lane.id)!.state, 'paused');
+    app.setSessionModel(session.id, model);
+    await app.resume(lane.id);
+    const retry = app.enqueue({
+      requestId: 'image-explicit-retry',
+      sessionId: session.id,
+      text: 'explicit image retry',
+      attachmentIds: [attachment.id],
+    });
+    await until(
+      () => state(app, retry.id).state === 'succeeded',
+      'explicit retry with a supported model',
+    );
+    assert.equal(state(app, run.id).state, 'failed', 'the rejected run remains unchanged');
+    assert.equal(app.history(session.id).messages[0]?.images[0]?.data, data);
+  },
+);

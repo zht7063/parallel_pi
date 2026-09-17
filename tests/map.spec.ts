@@ -41,6 +41,10 @@ test('shared relation map preserves independent viewports, previews, drafts and 
       }, input);
     const alpha = await command({ type: 'project.add', directory: repos[0] });
     const beta = await command({ type: 'project.add', directory: repos[1] });
+    const projectOrder = page.locator('.project-link strong');
+    await expect(projectOrder.last()).toHaveText('beta');
+    const savedProjectOrder = await projectOrder.allTextContents();
+    expect(savedProjectOrder.slice(-2)).toEqual(['alpha', 'beta']);
     const snapshot = await page.evaluate(async () => (await fetch('/api/snapshot')).json());
     const lane = snapshot.lanes.find(
       (item: { projectId: string; ref: string }) =>
@@ -141,6 +145,7 @@ test('shared relation map preserves independent viewports, previews, drafts and 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
+    await expect(projectOrder).toHaveText(savedProjectOrder);
     const after = await page.evaluate(async () => (await fetch('/api/snapshot')).json());
     expect(
       after.runs.filter((run: { sessionId: string }) =>
@@ -252,6 +257,7 @@ test('shared relation map preserves independent viewports, previews, drafts and 
       .click();
     await expect(page.locator('.message')).toHaveCount(95);
     await expect.poll(() => page.locator('.messages').evaluate((el) => el.scrollTop)).toBe(300);
+    await expect(projectOrder).toHaveText(savedProjectOrder);
     expect(errors).toEqual([]);
   } finally {
     rmSync(root, { recursive: true, force: true });
