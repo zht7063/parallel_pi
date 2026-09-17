@@ -176,6 +176,19 @@ test('real UI adds a dirty repository, executes images, preserves drafts, retrie
       true,
     );
     await page.screenshot({ path: 'test-results/conversation-narrow.png', fullPage: true });
+    const nativeDefaults = await (await page.request.get('/api/configuration')).json();
+    expect(
+      (
+        await page.request.post('/api/configuration', {
+          data: {
+            kind: 'defaults',
+            revision: nativeDefaults.settingsRevision,
+            provider: 'parallel-probe',
+            model: 'probe-b',
+          },
+        })
+      ).ok(),
+    ).toBe(true);
     const beforeContinue = await page.evaluate(
       async () => await (await fetch('/api/snapshot')).json(),
     );
@@ -186,7 +199,7 @@ test('real UI adds a dirty repository, executes images, preserves drafts, retrie
       .click();
     await expect(page.getByRole('dialog')).toContainText('不复制聊天或自动运行');
     await page.getByLabel('会话标题').fill('接续探索');
-    await expect(page.getByLabel('模型 ID', { exact: true })).toHaveValue('probe-a');
+    await expect(page.getByLabel('模型 ID', { exact: true })).toHaveValue('probe-b');
     await page.getByRole('button', { name: '创建会话', exact: true }).click();
     await expect(page.getByRole('heading', { name: '接续探索', exact: true })).toBeVisible();
     await expect(composer).toHaveValue('');

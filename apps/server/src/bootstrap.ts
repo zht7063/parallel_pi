@@ -3,12 +3,12 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { createHarness } from '@parallel-pi/application';
+import { createHarness, createConfiguration } from '@parallel-pi/application';
 import { createHttpServer } from '@parallel-pi/transport';
 import { openStore, createAttachmentStore, createHandoffStore } from '@parallel-pi/infra-storage';
 import { createGit } from '@parallel-pi/infra-git';
 import { createSupervisor } from '@parallel-pi/infra-platform';
-import { createEngine } from '@parallel-pi/infra-pi';
+import { createEngine, createConfigurationAccess, createModelCatalog } from '@parallel-pi/infra-pi';
 
 export async function createBackend(options: {
   dataDirectory: string;
@@ -26,7 +26,10 @@ export async function createBackend(options: {
     });
     const worktrees = join(options.dataDirectory, 'worktrees');
     mkdirSync(worktrees, { recursive: true, mode: 0o700 });
+    const configuration = createConfigurationAccess(options.agentDirectory);
+    const catalog = createModelCatalog(supervisor, options.agentDirectory);
     const app = createHarness({
+      configuration,
       store,
       supervisor,
       engine,
@@ -41,6 +44,7 @@ export async function createBackend(options: {
       app,
       fileURLToPath(new URL('../../web/dist', import.meta.url)),
       app,
+      createConfiguration(configuration, catalog),
     );
     return {
       app,
@@ -48,6 +52,7 @@ export async function createBackend(options: {
       async close() {
         server.closeAllConnections();
         server.close();
+        await catalog.close();
         await app.close();
         store.close();
       },

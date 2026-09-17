@@ -12,6 +12,7 @@ const props = defineProps<{
   drafts: DraftManager;
 }>();
 const emit = defineEmits<{
+  model: [];
   fork: [message: WorkspaceSnapshot['sessions'][number]['messages'][number]];
 }>();
 const runs = computed(
@@ -268,6 +269,13 @@ function reply(value: string | boolean | null) {
           {{ session.model.model }}</span
         >
       </div>
+      <button
+        type="button"
+        :disabled="client.connection.value !== 'connected'"
+        @click="emit('model')"
+      >
+        切换会话模型
+      </button>
       <span class="status-chip">{{
         current ? stateLabel[current.state] : stateLabel[lane.state]
       }}</span>

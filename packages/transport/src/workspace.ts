@@ -133,10 +133,32 @@ export async function body(request: IncomingMessage): Promise<Record<string, unk
     if (length > 16 * 1024 * 1024) throw new Error('Request exceeds 16 MiB');
     chunks.push(chunk);
   }
-  return object(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw new Error('Invalid JSON request');
+  }
+  return object(parsed);
 }
 export async function command(app: Harness, input: Record<string, unknown>): Promise<unknown> {
   switch (input.type) {
+    case 'project.configuration':
+      return app.projectConfiguration(id(input.laneId));
+    case 'project.defaults':
+      return app.updateProjectConfiguration(id(input.laneId), {
+        kind: 'defaults',
+        revision: string(input.revision),
+        model: input.model,
+      });
+    case 'project.trust':
+      if (input.decision !== null && typeof input.decision !== 'boolean')
+        throw new Error('Choose a trust decision');
+      return app.updateProjectConfiguration(id(input.laneId), {
+        kind: 'trust',
+        revision: string(input.revision),
+        decision: input.decision,
+      });
     case 'project.add': {
       const value = await app.addProject(string(input.directory));
       return { id: value.id };

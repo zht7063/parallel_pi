@@ -44,3 +44,12 @@ export type { Draft } from './ports.ts';
 export type { RunHandoff, HandoffSave, HandoffStore } from './ports.ts';
 
 export type { MemoryInput, MemoryReceipt, MemoryAccess, MemorySave } from './ports.ts';
+
+export { createConfiguration } from './configuration.ts';
+export type {
+  ModelCatalog,
+  Configuration,
+  ConfigurationAccess,
+  ConfigurationView,
+  ProjectConfigurationView,
+} from './configuration.ts';

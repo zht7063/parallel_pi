@@ -1,11 +1,24 @@
 // Browser tests use the real application and real pi with an isolated, deterministic provider.
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBackend } from '../apps/server/src/bootstrap.ts';
 
 const root = mkdtempSync(join(tmpdir(), 'parallel-browser-'));
+mkdirSync(join(root, 'agent'));
+writeFileSync(
+  join(root, 'agent/models.json'),
+  JSON.stringify({
+    providers: {
+      'browser-fixture': {
+        baseUrl: 'http://127.0.0.1:9/v1',
+        api: 'openai-completions',
+        models: [{ id: 'catalog-vision', input: ['text', 'image'] }],
+      },
+    },
+  }),
+);
 const backend = await createBackend({
   dataDirectory: join(root, 'data'),
   agentDirectory: join(root, 'agent'),

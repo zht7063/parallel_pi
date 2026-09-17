@@ -12,7 +12,7 @@ import { createHarness } from '@parallel-pi/application';
 import { openStore, createAttachmentStore, createHandoffStore } from '@parallel-pi/infra-storage';
 import { createGit } from '@parallel-pi/infra-git';
 import { createSupervisor } from '@parallel-pi/infra-platform';
-import { createEngine } from '@parallel-pi/infra-pi';
+import { createEngine, createConfigurationAccess } from '@parallel-pi/infra-pi';
 import type { Harness, ImageInput } from '@parallel-pi/application';
 
 const fixture = fileURLToPath(new URL('../probes/fixture-extension.mjs', import.meta.url));
@@ -46,6 +46,7 @@ function setup() {
     extraArgs: ['--no-extensions', '--no-skills', '--no-prompt-templates', '-e', fixture],
   });
   const deps = {
+    configuration: createConfigurationAccess(join(root, 'agent')),
     store,
     supervisor,
     engine,
@@ -799,3 +800,97 @@ test('history pages keep stable entry cursors when newer messages arrive and sna
   assert.equal(wire.messages.length, 40);
   assert.equal(wire.messages.at(-1)!.id, 'new-entry');
 });
+
+test(
+  'native configuration inspections hold the branch, persist recovery intent and shutdown waits for explicit recovery',
+  { timeout: 20000 },
+  async (t) => {
+    const { root, directory, app, store, deps } = setup();
+    let current = app;
+    t.after(async () => {
+      await current.close();
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    });
+    await app.initialize();
+    await app.addProject(directory);
+    const lane = app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/main')!;
+    const inspection = app.projectConfiguration(lane.id);
+    await assert.rejects(app.createSession(lane.id, 'must wait', model), /occupied/);
+    await inspection;
+    const operation = app
+      .snapshot()
+      .state.operations.find((item) => item.kind === 'inspect-config')!;
+    assert.equal(operation.state, 'completed');
+    assert.equal(app.snapshot().state.sessions.length, 0);
+    assert.equal(app.snapshot().state.runs.length, 0);
+    // A published result with a lost app confirmation must not reload extensions on restart.
+    store.transaction((tx) => {
+      tx.state.operations.find((item) => item.id === operation.id)!.state = 'pending';
+    });
+    await app.close();
+    let inspections = 0;
+    current = createHarness({
+      ...deps,
+      engine: {
+        ...deps.engine,
+        inspectConfiguration: async (input) => {
+          inspections++;
+          return deps.engine.inspectConfiguration(input);
+        },
+      },
+    });
+    await current.initialize();
+    assert.equal(inspections, 0);
+    assert.equal(
+      current.snapshot().state.operations.find((item) => item.id === operation.id)!.state,
+      'failed',
+    );
+    assert.equal(
+      current.snapshot().state.lanes.find((item) => item.id === lane.id)!.state,
+      'paused',
+    );
+    mkdirSync(join(directory, '.pi'));
+    writeFileSync(join(directory, '.pi/settings.json'), '{broken');
+    await assert.rejects(current.projectConfiguration(lane.id), /configuration is invalid/);
+    assert.equal(
+      current.snapshot().state.lanes.find((item) => item.id === lane.id)!.state,
+      'paused',
+    );
+    writeFileSync(join(directory, '.pi/settings.json'), '{}');
+    await current.projectConfiguration(lane.id);
+    assert.equal(
+      current.snapshot().state.lanes.find((item) => item.id === lane.id)!.state,
+      'paused',
+    );
+    await current.close();
+    let release!: (value: { settled: boolean; exitCode: number | null; reason: string }) => void;
+    const proof = new Promise<{ settled: boolean; exitCode: number | null; reason: string }>(
+      (resolve) => {
+        release = resolve;
+      },
+    );
+    current = createHarness({
+      ...deps,
+      supervisor: {
+        ...deps.supervisor,
+        recover: (id) => (id === operation.id ? proof : deps.supervisor.recover(id)),
+      },
+    });
+    await current.initialize();
+    store.transaction((tx) => {
+      tx.state.operations.find((item) => item.id === operation.id)!.state = 'pending';
+    });
+    const recovering = current.recoverLane(lane.id);
+    let closed = false;
+    const closing = current.close().then(() => {
+      closed = true;
+    });
+    await delay(25);
+    assert.equal(closed, false, 'shutdown must not close storage during recovery');
+    release({ settled: true, exitCode: 0, reason: 'verified-fixture' });
+    await recovering;
+    await closing;
+    assert.equal(closed, true);
+  },
+);

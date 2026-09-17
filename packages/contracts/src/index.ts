@@ -115,3 +115,31 @@ export interface HistoryPage {
   total: number;
   more: boolean;
 }
+
+export interface ConfigurationSnapshot {
+  settingsRevision: string;
+  credentialsRevision: string;
+  defaults: { provider?: string; model?: string };
+  credentials: { provider: string; type: string }[];
+}
+
+export interface ProjectConfigurationSnapshot {
+  directory: string;
+  settingsRevision: string;
+  trustRevision: string;
+  defaults: { provider?: string; model?: string };
+  globalDefaults: { provider?: string; model?: string };
+  effective: { provider?: string; model?: string };
+  trusted: boolean;
+  trustSource: string;
+  decisionSource: string;
+  decision: boolean | null;
+}
+
+export interface CatalogModel {
+  provider: string;
+  model: string;
+  name: string;
+  images: boolean;
+  available: boolean;
+}

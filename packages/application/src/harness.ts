@@ -1,3 +1,5 @@
+import { validateConfigurationRevision, validateDefaultModel } from './configuration.ts';
+import type { ConfigurationAccess } from './configuration.ts';
 import { createMemoryService, memoryBlocked } from './memory.ts';
 import { activeStates, concurrency, resolveModel, schedule, transition } from '@parallel-pi/domain';
 import type { ModelSelection, RunState } from '@parallel-pi/domain';
@@ -25,6 +27,7 @@ import type {
 } from './ports.ts';
 
 export function createHarness(deps: {
+  configuration?: ConfigurationAccess;
   store: AppStore;
   attachments: AttachmentStore;
   handoffs: HandoffStore;
@@ -104,23 +107,29 @@ export function createHarness(deps: {
       tx.emit('project.changed', { projectId });
     });
   }
-  async function withLane<T>(laneId: string, work: () => Promise<T>) {
-    requireReady();
-    if (maintenance.has(laneId) || [...active.values()].some((item) => item.laneId === laneId))
-      throw new Error('Branch is occupied; wait for its current operation');
-    if (lane(laneId).state === 'recovering')
-      throw new Error('Branch requires recovery before changing its workspace');
+  function holdMaintenance(laneId: string) {
     maintenance.add(laneId);
     let release!: () => void;
     const done = new Promise<void>((resolve) => {
       release = resolve;
     });
     maintenanceDone.add(done);
+    return () => {
+      maintenance.delete(laneId);
+      maintenanceDone.delete(done);
+      release();
+    };
+  }
+  async function withLane<T>(laneId: string, work: () => Promise<T>) {
+    requireReady();
+    if (maintenance.has(laneId) || [...active.values()].some((item) => item.laneId === laneId))
+      throw new Error('Branch is occupied; wait for its current operation');
+    if (lane(laneId).state === 'recovering')
+      throw new Error('Branch requires recovery before changing its workspace');
+    const release = holdMaintenance(laneId);
     try {
       return await work();
     } finally {
-      maintenance.delete(laneId);
-      maintenanceDone.delete(done);
       release();
       pump();
     }
@@ -434,9 +443,10 @@ export function createHarness(deps: {
     }
   }
   async function recoverLane(laneId: string) {
+    if (closing) throw new Error('Application is shutting down');
     if ([...active.values()].some((item) => item.laneId === laneId) || maintenance.has(laneId))
       throw new Error('Branch is still occupied');
-    maintenance.add(laneId);
+    const release = holdMaintenance(laneId);
     try {
       let safe = true;
       for (const run of snapshot().state.runs.filter(
@@ -458,6 +468,13 @@ export function createHarness(deps: {
           continue;
         }
         try {
+          if (operation.kind === 'inspect-config') {
+            store.transaction((tx) => {
+              tx.state.operations.find((item) => item.id === operation.id)!.state = 'failed';
+              tx.emit('configuration.interrupted', { laneId });
+            });
+            continue;
+          }
           if (operation.kind === 'create-branch' || operation.kind === 'fetch-remotes') {
             const owner = project(lane(laneId).projectId);
             let found = false;
@@ -534,7 +551,7 @@ export function createHarness(deps: {
         );
       return safe;
     } finally {
-      maintenance.delete(laneId);
+      release();
     }
   }
   async function refreshRemoteRefs(laneId: string, directory: string, remote?: string) {
@@ -567,6 +584,37 @@ export function createHarness(deps: {
       throw error;
     }
   }
+  async function inspectConfiguration(laneId: string, directory: string) {
+    if (!deps.configuration) throw new Error('Native configuration is unavailable');
+    const operation = beginOperation(laneId, 'inspect-config', directory);
+    try {
+      const actual = await engine.inspectConfiguration({ operationId: operation.id, directory });
+      const stored = deps.configuration.project(directory);
+      store.transaction((tx) => {
+        tx.state.operations.find((item) => item.id === operation.id)!.state = 'completed';
+        tx.emit('configuration.inspected', { laneId });
+      });
+      return {
+        ...stored,
+        ...actual,
+        trustSource: stored.trusted === actual.trusted ? stored.trustSource : 'native',
+      };
+    } catch (cause) {
+      const proof = await supervisor.recover(operation.id);
+      store.transaction((tx) => {
+        const record = tx.state.operations.find((item) => item.id === operation.id)!;
+        record.state = proof.settled ? 'failed' : 'uncertain';
+        record.error = 'Native configuration inspection failed; inspect settings and extensions';
+        tx.emit('configuration.failed', { laneId });
+      });
+      setLane(
+        laneId,
+        proof.settled ? 'paused' : 'recovering',
+        proof.settled ? '配置检查失败；请修复后明确恢复队列。' : proof.reason,
+      );
+      throw cause;
+    }
+  }
   const memoryService = createMemoryService({
     store,
     memory: deps.memory,
@@ -577,6 +625,31 @@ export function createHarness(deps: {
   });
   return {
     ...memoryService,
+    async projectConfiguration(laneId: string) {
+      if (!deps.configuration) throw new Error('Native configuration is unavailable');
+      // Native trust hooks can execute code. Hold the lane until supervised cleanup.
+      return withLane(laneId, async () => inspectConfiguration(laneId, await prepare(laneId)));
+    },
+    async updateProjectConfiguration(
+      laneId: string,
+      input:
+        | { kind: 'defaults'; revision: string; model: unknown }
+        | { kind: 'trust'; revision: string; decision: boolean | null },
+    ) {
+      if (!deps.configuration) throw new Error('Native configuration is unavailable');
+      const access = deps.configuration;
+      validateConfigurationRevision(input.revision);
+      if (input.kind === 'trust' && input.decision !== null && typeof input.decision !== 'boolean')
+        throw new Error('Choose a trust decision');
+      const model = input.kind === 'defaults' ? validateDefaultModel(input.model) : null;
+      return withLane(laneId, async () => {
+        const directory = await prepare(laneId);
+        if (input.kind === 'defaults') access.projectDefaults(directory, input.revision, model);
+        else access.trust(directory, input.revision, input.decision);
+        store.append('configuration.changed', { laneId, kind: input.kind });
+        return inspectConfiguration(laneId, directory);
+      });
+    },
     snapshot,
     history(sessionId: string, before?: string, limit = 40) {
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)

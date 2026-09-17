@@ -4,10 +4,15 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
-import type { Application, Harness, EngineEvent } from '@parallel-pi/application';
+import type { Application, Harness, EngineEvent, Configuration } from '@parallel-pi/application';
 import type { ServiceStatus } from '@parallel-pi/contracts';
 
-export function createHttpServer(application: Application, webRoot: string, workspace?: Harness) {
+export function createHttpServer(
+  application: Application,
+  webRoot: string,
+  workspace?: Harness,
+  configuration?: Configuration,
+) {
   // Restart rotates the local browser session. No token is placed in a URL or localStorage.
   const token = randomBytes(32).toString('hex');
   const server = createServer((request, response) => {
@@ -67,6 +72,13 @@ export function createHttpServer(application: Application, webRoot: string, work
         return json(response, 401, {
           error: { code: 'SESSION', message: 'Reconnect to the local application' },
         });
+      }
+      if (configuration && url.pathname === '/api/models' && request.method === 'GET')
+        return json(response, 200, await configuration.models());
+      if (configuration && url.pathname === '/api/configuration') {
+        if (request.method === 'GET') return json(response, 200, configuration.read());
+        if (request.method === 'POST')
+          return json(response, 200, configuration.update(await body(request)));
       }
       if (workspace) {
         if (url.pathname === '/api/attachment' && request.method === 'GET') {

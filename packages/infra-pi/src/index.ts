@@ -1,3 +1,4 @@
+import { getAgentDir } from '../../../vendor/pi/packages/coding-agent/dist/config.js';
 import {
   mkdirSync,
   writeFileSync,
@@ -270,6 +271,7 @@ export function createEngine(options: {
 }): Engine {
   mkdirSync(options.sessionRoot, { recursive: true, mode: 0o700 });
   const sessionRoot = realpathSync(options.sessionRoot);
+  const agentDirectory = resolve(options.agentDirectory ?? getAgentDir());
   function forkPaths(input: ForkInput) {
     if (
       !/^[a-zA-Z0-9_-]{1,128}$/.test(input.operationId) ||
@@ -342,6 +344,55 @@ export function createEngine(options: {
     };
   }
   return {
+    async inspectConfiguration(input) {
+      if (!/^[a-zA-Z0-9_-]{1,128}$/.test(input.operationId))
+        throw new Error('Invalid configuration inspection ID');
+      const root = join(sessionRoot, '.configuration');
+      mkdirSync(root, { recursive: true, mode: 0o700 });
+      const output = join(root, `${input.operationId}.json`);
+      const child = options.supervisor.start({
+        id: input.operationId,
+        directory: input.directory,
+        command: process.execPath,
+        args: [
+          fileURLToPath(new URL('./configuration-worker.mjs', import.meta.url)),
+          input.directory,
+          agentDirectory,
+          output,
+          JSON.stringify(options.extraArgs ?? []),
+        ],
+        env: {
+          ...process.env,
+          ...options.env,
+          PI_OFFLINE: '1',
+          PI_CODING_AGENT_DIR: agentDirectory,
+        },
+      });
+      let expired = false;
+      const timer = setTimeout(() => {
+        expired = true;
+        void child.stop();
+      }, 25000);
+      try {
+        const proof = await child.completion;
+        if (!proof.settled || proof.exitCode !== 0 || expired)
+          throw new Error(
+            'Native project configuration could not be loaded; check settings and extensions',
+          );
+        const value = JSON.parse(readFileSync(output, 'utf8'));
+        if (
+          typeof value.trusted !== 'boolean' ||
+          !value.effective ||
+          [value.effective.provider, value.effective.model].some(
+            (item) => item !== undefined && typeof item !== 'string',
+          )
+        )
+          throw new Error('Invalid native configuration result');
+        return value;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
     reconcileFork,
     async fork(input) {
       const paths = forkPaths(input);
@@ -404,7 +455,7 @@ export function createEngine(options: {
         env: {
           ...process.env,
           ...options.env,
-          ...(options.agentDirectory ? { PI_CODING_AGENT_DIR: options.agentDirectory } : {}),
+          PI_CODING_AGENT_DIR: agentDirectory,
         },
       });
       const rpc = new Rpc(processHandle, emit);
@@ -459,3 +510,7 @@ export function createEngine(options: {
     },
   };
 }
+
+export { createConfigurationAccess } from './configuration.ts';
+
+export { createModelCatalog } from './model-catalog.ts';

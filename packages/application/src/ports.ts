@@ -30,7 +30,8 @@ export interface Operation {
     | 'save-memory'
     | 'create-branch'
     | 'fetch-remotes'
-    | 'fork-session';
+    | 'fork-session'
+    | 'inspect-config';
   memorySaveId?: string;
   requestId?: string;
   fingerprint?: string;
@@ -191,6 +192,10 @@ export interface ForkResult {
   draft: { text: string; images: ImageInput[] };
 }
 export interface Engine {
+  inspectConfiguration(input: {
+    operationId: string;
+    directory: string;
+  }): Promise<{ trusted: boolean; effective: { provider?: string; model?: string } }>;
   fork(input: ForkInput): Promise<ForkResult>;
   reconcileFork(input: ForkInput): Promise<ForkResult | null>;
   open(

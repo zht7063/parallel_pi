@@ -3,8 +3,11 @@ import { computed, nextTick, onMounted, onBeforeUnmount, reactive, ref, watch } 
 import { useWorkspace, isActive } from './workspace.ts';
 import { useDrafts } from './drafts.ts';
 import AppDialog from './components/AppDialog.vue';
+import ModelPicker from './components/ModelPicker.vue';
+import SettingsDialog from './components/SettingsDialog.vue';
+import ProjectSettingsDialog from './components/ProjectSettingsDialog.vue';
 import Conversation from './components/Conversation.vue';
-import type { WorkspaceSnapshot } from '@parallel-pi/contracts';
+import type { WorkspaceSnapshot, ProjectConfigurationSnapshot } from '@parallel-pi/contracts';
 import ProjectMap from './components/ProjectMap.vue';
 import MapThumbnail from './components/MapThumbnail.vue';
 const client = useWorkspace(),
@@ -43,10 +46,14 @@ function escapeMap(event: KeyboardEvent) {
     closeMap();
   }
 }
+const sessionConfigLoading = ref(false),
+  sessionModelSource = ref('');
 const selectedProject = ref(''),
   activeSession = ref(''),
   preview = ref('');
-const dialog = ref<'project' | 'session' | 'settings' | 'branch' | 'fork' | null>(null),
+const dialog = ref<
+    'project' | 'session' | 'settings' | 'project-settings' | 'model' | 'branch' | 'fork' | null
+  >(null),
   busy = ref(false),
   commandBusy = ref(false),
   formError = ref('');
@@ -62,7 +69,6 @@ const form = reactive({
   branchName: '',
   startRef: '',
   track: false,
-  concurrency: 2,
 });
 const project = computed(() =>
   data.value?.projects.find((item) => item.id === selectedProject.value),
@@ -147,7 +153,7 @@ function back() {
   } catch {}
 }
 function open(
-  type: 'project' | 'session' | 'settings' | 'branch' | 'fork',
+  type: 'project' | 'session' | 'settings' | 'project-settings' | 'model' | 'branch' | 'fork',
   laneId = '',
   parentSessionId = '',
 ) {
@@ -158,20 +164,38 @@ function open(
   form.parentSessionId = parentSessionId;
   form.title = '';
   form.requestId = crypto.randomUUID();
-  if (type === 'session') {
-    const previous = data.value?.sessions.find((item) =>
-      parentSessionId ? item.id === parentSessionId : item.laneId === laneId,
-    );
-    form.provider =
-      (parentSessionId ? previous?.model.provider : project.value?.model?.provider) ??
-      previous?.model.provider ??
-      '';
-    form.model =
-      (parentSessionId ? previous?.model.model : project.value?.model?.model) ??
-      previous?.model.model ??
-      '';
+  if (type === 'model') {
+    const current = data.value?.sessions.find((item) => item.id === parentSessionId);
+    form.provider = current?.model.provider ?? '';
+    form.model = current?.model.model ?? '';
   }
-  if (type === 'settings') form.concurrency = data.value?.concurrency ?? 2;
+  if (type === 'session') {
+    sessionConfigLoading.value = true;
+    sessionModelSource.value = '';
+    form.provider = '';
+    form.model = '';
+    const requestId = form.requestId;
+    void client
+      .command<ProjectConfigurationSnapshot>({ type: 'project.configuration', laneId })
+      .then((value) => {
+        if (dialog.value !== 'session' || form.requestId !== requestId) return;
+        sessionModelSource.value =
+          value.trusted && (value.defaults.provider || value.defaults.model)
+            ? '工作区 .pi/settings.json（缺省字段沿用全局）'
+            : 'pi 全局默认';
+        if (!form.provider && !form.model) {
+          form.provider = value.effective.provider ?? '';
+          form.model = value.effective.model ?? '';
+        }
+      })
+      .catch((cause) => {
+        if (dialog.value === 'session' && form.requestId === requestId)
+          formError.value = cause instanceof Error ? cause.message : '无法读取工作区配置。';
+      })
+      .finally(() => {
+        if (form.requestId === requestId) sessionConfigLoading.value = false;
+      });
+  }
 }
 async function submit() {
   if (busy.value) return;
@@ -181,7 +205,10 @@ async function submit() {
     document.getElementById('project-directory')?.focus();
     return;
   }
-  if (dialog.value === 'session' && (!form.provider.trim() || !form.model.trim())) {
+  if (
+    (dialog.value === 'session' || dialog.value === 'model') &&
+    (!form.provider.trim() || !form.model.trim())
+  ) {
     formError.value = '请填写 provider 和模型 ID；凭据沿用本机 pi 配置。';
     await nextTick();
     document.getElementById(!form.provider.trim() ? 'provider' : 'model')?.focus();
@@ -202,6 +229,12 @@ async function submit() {
         directory: form.directory,
       });
       chooseProject(result.id);
+    } else if (dialog.value === 'model') {
+      await client.command({
+        type: 'session.model',
+        sessionId: form.parentSessionId,
+        model: { provider: form.provider.trim(), model: form.model.trim() },
+      });
     } else if (dialog.value === 'session') {
       const result = await client.command<{ id: string }>({
         type: 'session.create',
@@ -230,7 +263,7 @@ async function submit() {
         startRef: form.startRef,
         track: form.track,
       });
-    } else await client.command({ type: 'concurrency.set', value: form.concurrency });
+    }
     dialog.value = null;
   } catch (cause) {
     formError.value = cause instanceof Error ? cause.message : '操作失败，输入已保留。';
@@ -399,6 +432,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', escapeMap));
             :client="client"
             :drafts="drafts"
             @fork="openFork"
+            @model="open('model', session.laneId, session.id)"
           />
           <section
             v-if="mapOpen"
@@ -423,6 +457,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', escapeMap));
               @create="(laneId, parentId) => open('session', laneId, parentId)"
               @command="command"
               @remote="openBranch"
+              @settings="(laneId) => open('project-settings', laneId)"
             />
           </section>
         </div>
@@ -460,25 +495,41 @@ onBeforeUnmount(() => window.removeEventListener('keydown', escapeMap));
           @create="(laneId, parentId) => open('session', laneId, parentId)"
           @command="command"
           @remote="openBranch"
+          @settings="(laneId) => open('project-settings', laneId)"
         />
       </section>
     </main>
+    <ProjectSettingsDialog
+      v-if="dialog === 'project-settings'"
+      :client="client"
+      :lane-id="form.laneId"
+      :branch="data?.lanes.find((item) => item.id === form.laneId)?.ref ?? ''"
+      @close="dialog = null"
+    />
+    <SettingsDialog
+      v-else-if="dialog === 'settings'"
+      :client="client"
+      :concurrency="data?.concurrency ?? 2"
+      @close="dialog = null"
+    />
     <AppDialog
-      v-if="dialog"
+      v-else-if="dialog"
       :title="
-        dialog === 'fork'
-          ? '从历史消息分叉'
-          : dialog === 'project'
-            ? '添加本机项目'
-            : dialog === 'session'
-              ? form.parentSessionId
-                ? '新建接续会话'
-                : '新建独立会话'
-              : dialog === 'branch'
-                ? form.track
-                  ? '拉取远端分支到本地'
+        dialog === 'model'
+          ? '切换会话模型'
+          : dialog === 'fork'
+            ? '从历史消息分叉'
+            : dialog === 'project'
+              ? '添加本机项目'
+              : dialog === 'session'
+                ? form.parentSessionId
+                  ? '新建接续会话'
+                  : '新建独立会话'
+                : dialog === 'branch'
+                  ? form.track
+                    ? '拉取远端分支到本地'
+                    : '新建 Git 分支'
                   : '新建 Git 分支'
-                : '执行设置'
       "
       :blocked="busy"
       @close="dialog = null"
@@ -496,19 +547,29 @@ onBeforeUnmount(() => window.removeEventListener('keydown', escapeMap));
           <p id="project-help" class="hint">
             输入本机已检出的 Git 仓库路径。不会移动或清除未提交修改。
           </p></template
-        ><template v-else-if="dialog === 'session'"
-          ><p v-if="form.parentSessionId" class="hint">
+        ><template v-else-if="dialog === 'session' || dialog === 'model'"
+          ><p v-if="dialog === 'session' && form.parentSessionId" class="hint">
             接续自“{{
               data?.sessions.find((item) => item.id === form.parentSessionId)?.title
             }}”。建立新上下文，不复制聊天或自动运行；使用当前代码。
           </p>
-          <label for="session-title">会话标题</label
-          ><input
-            id="session-title"
-            v-model="form.title"
-            autofocus
-            placeholder="描述这条思路"
-            maxlength="200"
+          <template v-if="dialog === 'session'"
+            ><label for="session-title">会话标题</label
+            ><input
+              id="session-title"
+              v-model="form.title"
+              autofocus
+              placeholder="描述这条思路"
+              maxlength="200" /></template
+          ><ModelPicker
+            :client="client"
+            :disabled="busy"
+            @select="
+              (value) => {
+                form.provider = value.provider;
+                form.model = value.model;
+              }
+            "
           /><label for="provider">Provider</label
           ><input
             id="provider"
@@ -525,7 +586,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', escapeMap));
             aria-describedby="form-error model-help"
           />
           <p id="model-help" class="hint">
-            沿用本机 pi 凭据。每次发送固定当前模型，不可用时明确报错。
+            {{
+              dialog === 'model'
+                ? '仅作用于此会话下一次发送。运行中和已排队任务保持原模型'
+                : sessionConfigLoading
+                  ? '正在读取工作区默认模型…'
+                  : `初始来源：${sessionModelSource || '尚未设置'}`
+            }}。可在这里修改；每次发送固定当前模型，不可用时明确报错。
           </p></template
         ><template v-else-if="dialog === 'fork'">
           <p>来源会话：{{ forkSource?.title }}</p>
@@ -576,34 +643,28 @@ onBeforeUnmount(() => window.removeEventListener('keydown', escapeMap));
                 ? '先获取所选远端，再创建跟踪分支；不合并到当前分支。'
                 : '从起点的已提交 HEAD 创建；未提交改动不会复制。'
             }}当前工作区不会切换。名称冲突时可使用已有分支，或修改名称。
-          </p> </template
-        ><template v-else
-          ><label for="concurrency">全局并发上限</label
-          ><input
-            id="concurrency"
-            v-model.number="form.concurrency"
-            type="number"
-            min="1"
-            step="1"
-          />
-          <p class="hint">同一 Git 分支始终串行；等待回答的任务仍占名额。</p></template
-        >
+          </p>
+        </template>
         <p id="form-error" class="form-error" role="alert">{{ formError }}</p>
         <div class="dialog-actions">
           <button type="button" :disabled="busy" @click="dialog = null">取消</button
           ><button
             type="submit"
             class="primary"
-            :disabled="busy || client.connection.value !== 'connected'"
+            :disabled="
+              busy ||
+              (dialog === 'session' && sessionConfigLoading) ||
+              client.connection.value !== 'connected'
+            "
             :aria-busy="busy"
           >
             {{
               busy
                 ? '正在保存…'
-                : dialog === 'fork'
-                  ? '创建分叉会话'
-                  : dialog === 'settings'
-                    ? '保存设置'
+                : dialog === 'model'
+                  ? '保存会话模型'
+                  : dialog === 'fork'
+                    ? '创建分叉会话'
                     : dialog === 'branch'
                       ? '创建本地分支'
                       : dialog === 'project'
