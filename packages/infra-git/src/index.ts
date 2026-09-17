@@ -1,26 +1,10 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
+import { inspectGitChanges } from './changes.ts';
+import { git, pathLine, safeError } from './command.ts';
 import { realpath, access } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { WorkspaceAccess, RepositoryFacts, ProcessSupervisor } from '@parallel-pi/application';
 
-const execute = promisify(execFile);
-const safeError = (value: string) => value.replace(/(https?:\/\/)[^/\s@]+@/g, '$1<redacted>@');
-const pathLine = (value: string) => (value.endsWith('\n') ? value.slice(0, -1) : value);
-async function git(directory: string, ...args: string[]): Promise<string> {
-  try {
-    const { stdout } = await execute('git', ['--no-optional-locks', '-C', directory, ...args], {
-      encoding: 'utf8',
-      maxBuffer: 16 * 1024 * 1024,
-      timeout: 30000,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-    });
-    return stdout;
-  } catch (cause) {
-    const error = cause as Error & { stderr?: string };
-    throw new Error(safeError(error.stderr?.trim() || 'Git command failed'), { cause });
-  }
-}
 async function worktrees(directory: string): Promise<RepositoryFacts['worktrees']> {
   const raw = await git(directory, 'worktree', 'list', '--porcelain', '-z');
   const result: RepositoryFacts['worktrees'] = [];
@@ -39,30 +23,38 @@ async function worktrees(directory: string): Promise<RepositoryFacts['worktrees'
   return result;
 }
 export function createGit(supervisor?: ProcessSupervisor): WorkspaceAccess {
-  async function writeGit(directory: string, args: string[], operationId?: string) {
+  async function writeGit(directory: string, args: string[], operationId?: string, worker = false) {
     if (!supervisor) return git(directory, ...args);
     if (!operationId) throw new Error('Git writes require a persisted operation ID');
     const child = supervisor.start({
       id: operationId,
       directory,
-      command: 'git',
-      args: ['-C', directory, ...args],
+      command: worker ? process.execPath : 'git',
+      args: worker ? args : ['-C', directory, ...args],
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
     });
     let output = '',
-      error = '';
+      error = '',
+      exceeded = false,
+      timedOut = false;
     child.onOutput((chunk) => {
-      output = (output + chunk).slice(-1024 * 1024);
+      if (output.length + chunk.length > 16 * 1024 * 1024) {
+        exceeded = true;
+        void child.stop();
+      } else output += chunk;
     });
     child.onErrorOutput((chunk) => {
       error = (error + chunk).slice(-65536);
     });
     const timer = setTimeout(() => {
+      timedOut = true;
       void child.stop();
     }, 30000);
     try {
       const proof = await child.completion;
       if (!proof.settled) throw new Error(proof.reason);
+      if (exceeded || timedOut)
+        throw new Error(exceeded ? 'Git output exceeded its limit' : 'Git operation timed out');
       if (proof.exitCode !== 0) throw new Error(safeError(error || 'Git operation failed'));
       return output;
     } finally {
@@ -70,6 +62,16 @@ export function createGit(supervisor?: ProcessSupervisor): WorkspaceAccess {
     }
   }
   return {
+    async inspectChanges(directory, operationId) {
+      if (!supervisor) return inspectGitChanges(directory);
+      const output = await writeGit(
+        directory,
+        [fileURLToPath(new URL('./changes-worker.ts', import.meta.url))],
+        operationId,
+        true,
+      );
+      return JSON.parse(output);
+    },
     async inspect(input) {
       const inputPath = await realpath(input);
       if ((await git(inputPath, 'rev-parse', '--is-bare-repository')).trim() === 'true')
@@ -228,3 +230,5 @@ export function createGit(supervisor?: ProcessSupervisor): WorkspaceAccess {
     },
   };
 }
+
+export { inspectGitChanges } from './changes.ts';

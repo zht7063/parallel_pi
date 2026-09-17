@@ -248,6 +248,8 @@ export async function command(app: Harness, input: Record<string, unknown>): Pro
       });
       return { id: run.id, state: run.state };
     }
+    case 'git.inspect':
+      return app.inspectGit(id(input.laneId));
     case 'memory.inspect': {
       let query: MemoryQuery | undefined;
       if (input.query !== undefined) {

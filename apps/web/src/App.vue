@@ -7,6 +7,7 @@ import ModelPicker from './components/ModelPicker.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
 import ProjectSettingsDialog from './components/ProjectSettingsDialog.vue';
 import MemoryDialog from './components/MemoryDialog.vue';
+import GitChangesDialog from './components/GitChangesDialog.vue';
 import Conversation from './components/Conversation.vue';
 import type { WorkspaceSnapshot, ProjectConfigurationSnapshot } from '@parallel-pi/contracts';
 import ProjectMap from './components/ProjectMap.vue';
@@ -58,6 +59,7 @@ const dialog = ref<
     | 'settings'
     | 'project-settings'
     | 'memory'
+    | 'git'
     | 'model'
     | 'branch'
     | 'fork'
@@ -168,6 +170,7 @@ function open(
     | 'settings'
     | 'project-settings'
     | 'memory'
+    | 'git'
     | 'model'
     | 'branch'
     | 'fork',
@@ -476,6 +479,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', escapeMap));
               @remote="openBranch"
               @settings="(laneId) => open('project-settings', laneId)"
               @memory="(laneId) => open('memory', laneId)"
+              @git="(laneId) => open('git', laneId)"
             />
           </section>
         </div>
@@ -515,11 +519,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', escapeMap));
           @remote="openBranch"
           @settings="(laneId) => open('project-settings', laneId)"
           @memory="(laneId) => open('memory', laneId)"
+          @git="(laneId) => open('git', laneId)"
         />
       </section>
     </main>
+    <GitChangesDialog
+      v-if="dialog === 'git'"
+      :client="client"
+      :lane-id="form.laneId"
+      @close="dialog = null"
+    />
     <MemoryDialog
-      v-if="dialog === 'memory'"
+      v-else-if="dialog === 'memory'"
       :client="client"
       :lane-id="form.laneId"
       :jobs="data?.memoryChanges.filter((job) => job.laneId === form.laneId) ?? []"

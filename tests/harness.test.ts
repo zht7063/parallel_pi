@@ -1055,3 +1055,78 @@ test(
     assert.equal(readFileSync(join(directory, 'code'), 'utf8'), 'dirty');
   },
 );
+
+test(
+  'Git preview holds branch maintenance and interrupted reads recover without replay',
+  { timeout: 30000 },
+  async (t) => {
+    const { root, directory, store, deps } = setup();
+    let app = createHarness(deps);
+    t.after(async () => {
+      await app.close();
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    });
+    await app.initialize();
+    await app.addProject(directory);
+    const lane = app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/main')!;
+    const session = await app.createSession(lane.id, 'Git maintenance', model);
+    const inspect = deps.git.inspectChanges.bind(deps.git);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    deps.git.inspectChanges = async (directory, operationId) => {
+      await gate;
+      return inspect(directory, operationId);
+    };
+    const reading = app.inspectGit(lane.id);
+    await until(
+      () =>
+        app
+          .snapshot()
+          .state.operations.some((item) => item.kind === 'inspect-git' && item.state === 'pending'),
+      'Git read intent',
+    );
+    const run = app.enqueue({
+      requestId: 'after-git-preview',
+      sessionId: session.id,
+      text: 'after preview',
+      attachmentIds: [],
+    });
+    assert.equal(state(app, run.id).state, 'queued');
+    await assert.rejects(app.inspectGit(lane.id), /occupied/);
+    release();
+    const view = await reading;
+    assert.match(view.files.find((file) => file.path === 'code')!.workingDiff, /dirty/);
+    assert.equal(readFileSync(join(directory, 'code'), 'utf8'), 'dirty');
+    await until(() => state(app, run.id).state === 'succeeded', 'queued run after preview');
+    assert.equal(
+      app.snapshot().state.operations.find((item) => item.kind === 'inspect-git')!.state,
+      'completed',
+    );
+    await app.close();
+    const interrupted = randomUUID();
+    store.transaction((tx) => {
+      tx.state.operations.push({
+        id: interrupted,
+        laneId: lane.id,
+        kind: 'inspect-git',
+        target: directory,
+        state: 'pending',
+        error: null,
+        createdAt: Date.now(),
+      });
+    });
+    deps.git.inspectChanges = async () => {
+      throw new Error('Interrupted preview must not replay');
+    };
+    app = createHarness(deps);
+    await app.initialize();
+    assert.equal(
+      app.snapshot().state.operations.find((item) => item.id === interrupted)!.state,
+      'failed',
+    );
+    assert.equal(app.snapshot().state.lanes.find((item) => item.id === lane.id)!.state, 'paused');
+  },
+);

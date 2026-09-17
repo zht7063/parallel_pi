@@ -64,3 +64,5 @@ export type {
   MemoryChange,
   MemoryChangeReceipt,
 } from './ports.ts';
+
+export type { GitFileChange, GitChangesView } from './ports.ts';

@@ -198,3 +198,22 @@ export interface MemorySnapshot {
   total: number;
   record: (MemoryRecordView & { body: string; boundaries: Record<string, string> }) | null;
 }
+
+export interface GitChangesSnapshot {
+  directory: string;
+  ref: string;
+  head: string;
+  revision: string;
+  files: {
+    path: string;
+    indexStatus: string;
+    worktreeStatus: string;
+    staged: boolean;
+    unstaged: boolean;
+    untracked: boolean;
+    partial: boolean;
+    unsupported: string | null;
+    stagedDiff: string;
+    workingDiff: string;
+  }[];
+}

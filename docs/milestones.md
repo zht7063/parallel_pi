@@ -113,3 +113,12 @@
 - 可见原生 custom message 进入持久运行通知，结束/刷新后可查；资源配置检查加载 eager MCP 后仍能完成受监督收束。
 - `npm run check` 41 项 Node 测试与架构/类型/格式检查通过，构建通过；完整 8 个浏览器场景通过。UI strict 0 errors / 0 warnings，DESIGN lint 0 errors / 1 项既有 warning。已查看 390px 通知截图。
 - 证据与范围见 [M4d 自动记忆](evidence/m4-memory-agent.md)。本段单独提交；后续继续 Git diff/整文件提交、备份/本机 Linux 打包/手动升级，以及完整 M5 验收。确定性 provider 的集成验证不替代外部模型应用验收。
+
+
+### M4e1 已完成：Git 变更查看
+
+- 分支全局/浮层地图接入变更弹窗，显示真实 HEAD、暂存/未暂存/未跟踪文件、原生逐文件 diff；不归因于当前会话，不写 index。
+- 部分暂存及“暂存删除后重建”明确展示；二进制、符号链接、字面路径、重命名两端已有真实 Git 验证。预览前后比较 HEAD、完整索引和文件内容修订，拒绝混合快照。
+- 读取接入持久维护意图和进程监督；同分支运行互斥，重启不自动重放，读取失败保留旧视图并可重试。
+- `npm run check` 45 项 Node 测试及架构/类型/格式检查通过，构建通过；完整 9 个浏览器场景通过。UI strict 0 errors / 0 warnings，DESIGN lint 0 errors / 1 项既有 warning；已查看 390px 截图。
+- 为及时保存可独立使用的成果，本查看功能单独提交，证据见 [Git 预览](evidence/m4-git-preview.md)。整文件选择提交、钩子状态/失败/恢复继续实施；A13 及完整 M4/M5 均未完成，原范围不变。

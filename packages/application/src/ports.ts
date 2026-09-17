@@ -33,7 +33,8 @@ export interface Operation {
     | 'fork-session'
     | 'inspect-config'
     | 'inspect-memory'
-    | 'change-memory';
+    | 'change-memory'
+    | 'inspect-git';
   memorySaveId?: string;
   memoryChangeId?: string;
   requestId?: string;
@@ -88,6 +89,7 @@ export interface RepositoryFacts {
   worktrees: { directory: string; ref: string | null; head: string; locked: boolean }[];
 }
 export interface WorkspaceAccess {
+  inspectChanges(directory: string, operationId: string): Promise<GitChangesView>;
   inspect(directory: string): Promise<RepositoryFacts>;
   validate(binding: { repository: string; ref: string; directory: string }): Promise<void>;
   checkBranchName(directory: string, name: string): Promise<void>;
@@ -108,6 +110,26 @@ export interface WorkspaceAccess {
   /** null means absent; a different/ambiguous binding throws, never silently replaces it. */
   reconcileWorktree(repository: string, ref: string, target: string): Promise<string | null>;
 }
+export interface GitFileChange {
+  path: string;
+  indexStatus: string;
+  worktreeStatus: string;
+  staged: boolean;
+  unstaged: boolean;
+  untracked: boolean;
+  partial: boolean;
+  unsupported: string | null;
+  stagedDiff: string;
+  workingDiff: string;
+}
+export interface GitChangesView {
+  directory: string;
+  ref: string;
+  head: string;
+  revision: string;
+  files: GitFileChange[];
+}
+
 export interface Runtime {
   id(): string;
   now(): number;

@@ -469,13 +469,15 @@ export function createHarness(deps: {
           continue;
         }
         try {
-          if (operation.kind === 'inspect-config' || operation.kind === 'inspect-memory') {
+          if (['inspect-config', 'inspect-memory', 'inspect-git'].includes(operation.kind)) {
             store.transaction((tx) => {
               tx.state.operations.find((item) => item.id === operation.id)!.state = 'failed';
               tx.emit(
-                operation.kind === 'inspect-memory'
-                  ? 'memory.inspection-interrupted'
-                  : 'configuration.interrupted',
+                operation.kind === 'inspect-git'
+                  ? 'git.inspection-interrupted'
+                  : operation.kind === 'inspect-memory'
+                    ? 'memory.inspection-interrupted'
+                    : 'configuration.interrupted',
                 { laneId },
               );
             });
@@ -644,6 +646,30 @@ export function createHarness(deps: {
   return {
     ...memoryService,
     ...createMemoryEditor({ store, memory: deps.memory, supervisor, runtime, withLane, prepare }),
+    async inspectGit(laneId: string) {
+      return withLane(laneId, async () => {
+        const directory = await prepare(laneId);
+        const operation = beginOperation(laneId, 'inspect-git', directory);
+        try {
+          const view = await git.inspectChanges(directory, operation.id);
+          store.transaction((tx) => {
+            tx.state.operations.find((item) => item.id === operation.id)!.state = 'completed';
+            tx.emit('git.inspected', { laneId });
+          });
+          return view;
+        } catch (cause) {
+          const proof = await supervisor.recover(operation.id);
+          store.transaction((tx) => {
+            const record = tx.state.operations.find((item) => item.id === operation.id)!;
+            record.state = proof.settled ? 'failed' : 'uncertain';
+            record.error = cause instanceof Error ? cause.message : 'Git preview failed';
+            tx.emit('git.inspection-failed', { laneId });
+          });
+          if (!proof.settled) setLane(laneId, 'recovering', proof.reason);
+          throw cause;
+        }
+      });
+    },
     async projectConfiguration(laneId: string) {
       if (!deps.configuration) throw new Error('Native configuration is unavailable');
       // Native trust hooks can execute code. Hold the lane until supervised cleanup.

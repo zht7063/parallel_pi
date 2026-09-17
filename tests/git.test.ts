@@ -95,3 +95,106 @@ test('in-progress Git operations and ambiguous existing directories cannot silen
   await assert.rejects(adapter.reconcileWorktree(facts.repository, facts.ref, target), /ambiguous/);
   assert.equal(readFileSync(join(target, 'keep'), 'utf8'), 'unknown');
 });
+
+test('Git preview distinguishes index, worktree, untracked and partial files without changing the index', async (t) => {
+  const { inspectGitChanges } = await import('@parallel-pi/infra-git');
+  const { root, repository, git } = fixture();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(repository, 'file.txt'), 'staged version\n');
+  git('add', '--', 'file.txt');
+  writeFileSync(join(repository, 'file.txt'), 'working version\n');
+  const literal = ':(glob)*\n中文.txt';
+  writeFileSync(join(repository, literal), 'literal path content\n');
+  writeFileSync(join(repository, 'binary'), Buffer.from([0, 1, 2, 3]));
+  symlinkSync('file.txt', join(repository, 'link'));
+  const index = readFileSync(join(repository, '.git/index'));
+  const view = await inspectGitChanges(repository);
+  assert.equal(view.head, git('rev-parse', 'HEAD'));
+  assert.equal(view.ref, 'refs/heads/main');
+  const partial = view.files.find((file) => file.path === 'file.txt')!;
+  assert.equal(partial.partial, true);
+  assert.equal(partial.staged, true);
+  assert.equal(partial.unstaged, true);
+  assert.match(partial.stagedDiff, /\+staged version/);
+  assert.doesNotMatch(partial.stagedDiff, /working version/);
+  assert.match(partial.workingDiff, /\+working version/);
+  assert.match(
+    view.files.find((file) => file.path === literal)!.workingDiff,
+    /literal path content/,
+  );
+  assert.match(view.files.find((file) => file.path === 'binary')!.workingDiff, /Binary files/);
+  assert.match(view.files.find((file) => file.path === 'link')!.workingDiff, /120000/);
+  assert.deepEqual(readFileSync(join(repository, '.git/index')), index);
+  assert.equal((await inspectGitChanges(repository)).revision, view.revision);
+  writeFileSync(join(repository, 'binary'), Buffer.from([0, 1, 2, 4]));
+  const binaryChanged = await inspectGitChanges(repository);
+  assert.notEqual(binaryChanged.revision, view.revision, 'binary bytes participate in revision');
+  assert.notEqual(
+    binaryChanged.files.find((file) => file.path === 'binary')!.workingDiff,
+    view.files.find((file) => file.path === 'binary')!.workingDiff,
+  );
+  git('add', '--', 'file.txt');
+  const staged = await inspectGitChanges(repository);
+  assert.notEqual(staged.revision, binaryChanged.revision);
+  assert.equal(staged.files.find((file) => file.path === 'file.txt')!.partial, false);
+  assert.deepEqual(readFileSync(join(repository, literal), 'utf8'), 'literal path content\n');
+});
+
+test('Git preview exposes both rename paths and refuses conflicted or nested repository paths', async (t) => {
+  const { inspectGitChanges } = await import('@parallel-pi/infra-git');
+  const { root, repository, git } = fixture();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  git('mv', 'file.txt', 'renamed.txt');
+  let view = await inspectGitChanges(repository);
+  assert.equal(view.files.find((file) => file.path === 'file.txt')!.indexStatus, 'D');
+  assert.equal(view.files.find((file) => file.path === 'renamed.txt')!.indexStatus, 'A');
+  mkdirSync(join(repository, 'nested'));
+  git('-C', 'nested', 'init', '-b', 'main');
+  writeFileSync(join(repository, 'nested/file'), 'nested content');
+  git('-C', 'nested', 'add', '.');
+  git(
+    '-C',
+    'nested',
+    '-c',
+    'user.name=Test',
+    '-c',
+    'user.email=test@example.invalid',
+    'commit',
+    '-m',
+    'nested',
+  );
+  view = await inspectGitChanges(repository);
+  assert.match(
+    view.files.find((file) => file.path === 'nested/')!.unsupported!,
+    /nested repository/,
+  );
+  git('checkout', '-b', 'conflict');
+  writeFileSync(join(repository, 'renamed.txt'), 'left\n');
+  git('add', '--', 'renamed.txt');
+  git('commit', '-m', 'left');
+  git('checkout', 'main');
+  writeFileSync(join(repository, 'file.txt'), 'right\n');
+  git('add', '--', 'file.txt');
+  git('commit', '-m', 'right');
+  assert.throws(() => git('merge', 'conflict'));
+  view = await inspectGitChanges(repository);
+  assert.ok(view.files.some((file) => file.unsupported?.includes('conflicts')));
+});
+
+test('a staged deletion recreated on disk remains one partial path in Git preview', async (t) => {
+  const { inspectGitChanges } = await import('@parallel-pi/infra-git');
+  const { root, repository, git } = fixture();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  git('rm', '--', 'file.txt');
+  writeFileSync(join(repository, 'file.txt'), 'recreated contents\n');
+  const view = await inspectGitChanges(repository);
+  assert.equal(view.files.length, 1);
+  const file = view.files[0]!;
+  assert.equal(file.path, 'file.txt');
+  assert.equal(file.partial, true);
+  assert.equal(file.staged, true);
+  assert.equal(file.unstaged, true);
+  assert.match(file.stagedDiff, /deleted file mode/);
+  assert.match(file.workingDiff, /recreated contents/);
+  assert.equal(git('diff', '--cached', '--name-status'), 'D\tfile.txt');
+});

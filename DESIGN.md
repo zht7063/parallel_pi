@@ -95,3 +95,6 @@
 
 
 会话中的原生扩展可见消息归入 `Conversation.vue` 的“运行通知”区域，消费现有 warning 与 message-text 样式，不增加 token 或 toast。通知绑定当前/最近运行的持久事件，结束与刷新后仍可查看；隐藏的 bootstrap 内容不展示。证据入口为 `tests/memory.spec.ts`。
+
+
+`GitChangesDialog.vue` 复用 AppDialog、共享按钮/文本及 mono/message-text/pre 换行规则。分支级入口在全局地图和会话地图浮层一致；HEAD 与工作区路径明确，暂存/未暂存分区，部分暂存用文字警告。读取失败保留上次结果并标记过期，可就地重试；Esc 关闭后回到入口。文件路径、SHA 和 diff 在窄窗口换行，不新增颜色或永久侧栏。浏览器证据为 `tests/git-changes.spec.ts`。
