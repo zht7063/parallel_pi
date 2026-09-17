@@ -5,6 +5,7 @@
   "type": "module",
   "exports": "./src/index.ts",
   "dependencies": {
-    "@parallel-pi/application": "*"
+    "@parallel-pi/application": "*",
+    "pi-mcp-adapter": "2.32.1"
   }
 }

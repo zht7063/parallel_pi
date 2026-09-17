@@ -1,4 +1,4 @@
-import { createMemoryAccess } from '@parallel-pi/infra-mwf';
+import { createMemoryAccess, memoryExtension } from '@parallel-pi/infra-mwf';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -22,7 +22,7 @@ export async function createBackend(options: {
       supervisor,
       sessionRoot: join(options.dataDirectory, 'sessions'),
       agentDirectory: options.agentDirectory,
-      extraArgs: options.engineArgs,
+      extraArgs: [...(options.engineArgs ?? []), '-e', memoryExtension],
     });
     const worktrees = join(options.dataDirectory, 'worktrees');
     mkdirSync(worktrees, { recursive: true, mode: 0o700 });

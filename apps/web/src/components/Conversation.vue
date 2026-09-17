@@ -162,6 +162,7 @@ const streamedText = computed(() =>
     .join(''),
 );
 const tools = computed(() => activity.value.filter((item) => item.kind === 'tool'));
+const notices = computed(() => activity.value.filter((item) => item.kind === 'notice'));
 async function loadActivity() {
   if (disposed) return;
   const target = current.value?.id ?? runs.value.at(-1)?.id;
@@ -408,6 +409,10 @@ function reply(value: string | boolean | null) {
           从此处分叉
         </button>
       </article>
+      <section v-if="notices.length" class="warning" aria-label="运行通知">
+        <h3>运行通知</h3>
+        <p v-for="item in notices" :key="item.cursor" class="message-text">{{ item.text }}</p>
+      </section>
       <section v-if="current" class="live-run" aria-label="当前执行">
         <h3>{{ stateLabel[current.state] }}</h3>
         <p class="message-text">{{ current.text }}</p>

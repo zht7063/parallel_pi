@@ -119,7 +119,7 @@ export function checkArchitecture(root) {
             );
           const nativeMemoryEntry =
             owner.name === 'infra-mwf' &&
-            ['core.js', 'storage.js', 'protocol.js'].some(
+            ['core.js', 'storage.js', 'protocol.js', 'pi-adapter.js'].some(
               (entry) =>
                 target === resolve(root, 'probes/.cache/mwf-source/packages/mwf/dist', entry),
             );

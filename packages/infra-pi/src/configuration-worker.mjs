@@ -80,3 +80,7 @@ try {
 } catch {
   process.exitCode = 1;
 }
+
+// Resource inspection has no live session to shut down. Native extensions may
+// start MCP children while loading; the supervisor reaps them after this exit.
+process.exit(process.exitCode ?? 0);

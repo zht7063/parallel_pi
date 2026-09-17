@@ -104,3 +104,12 @@
 - 修复了保存因未初始化失败后无法先初始化的恢复顺序，以及已接受意图但尚未登记子进程时重启留下永久 pending 的窗口；新增/纠正均有回归证据。
 - 最终 `npm run check` 39 项 Node 测试、架构/类型/格式检查通过，构建通过；完整 8 个浏览器场景通过。最后补充非法 Git 策略保护后，原生记忆专项和架构检查再次通过。UI strict 0 errors / 0 warnings，DESIGN lint 0 errors / 1 项既有 warning。已查看 390px 截图。
 - 证据见 [M4c 记忆管理](evidence/m4-memory.md)。此段单独提交；实际 agent 自动 bootstrap/MCP、Git 成果、备份/本机 Linux 打包/手动升级和 M5 完整验收继续实施。
+
+
+### M4d 已完成：自动记忆与 MCP
+
+- 真实 pi 运行按当前 worktree 自动加载原生 bootstrap/MCP；已有 adapter 复用，未初始化工作区不隐式创建记忆或安装项目资源。
+- 兼容原生 bootstrap 去重；旧绝对路径扩展产生的外部记忆不进入当前模型上下文，原生历史保留。原生 MCP 服务拒绝跨根请求。
+- 可见原生 custom message 进入持久运行通知，结束/刷新后可查；资源配置检查加载 eager MCP 后仍能完成受监督收束。
+- `npm run check` 41 项 Node 测试与架构/类型/格式检查通过，构建通过；完整 8 个浏览器场景通过。UI strict 0 errors / 0 warnings，DESIGN lint 0 errors / 1 项既有 warning。已查看 390px 通知截图。
+- 证据与范围见 [M4d 自动记忆](evidence/m4-memory-agent.md)。本段单独提交；后续继续 Git diff/整文件提交、备份/本机 Linux 打包/手动升级，以及完整 M5 验收。确定性 provider 的集成验证不替代外部模型应用验收。

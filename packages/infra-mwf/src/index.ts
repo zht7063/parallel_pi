@@ -136,3 +136,5 @@ export function createMemoryAccess(
     },
   };
 }
+
+export const memoryExtension = fileURLToPath(new URL('./extension.mjs', import.meta.url));

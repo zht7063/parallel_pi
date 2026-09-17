@@ -129,6 +129,12 @@ class Rpc {
             this.runFailure = new Error(
               event.message.errorMessage || `pi execution ${event.message.stopReason}`,
             );
+          } else if (
+            event.type === 'message_end' &&
+            event.message?.role === 'custom' &&
+            event.message.display === true
+          ) {
+            emit({ type: 'notice', text: textOf(event.message.content) });
           } else if (event.type === 'agent_end') {
             this.ended = true;
             if (this.runFailure) this.waiting?.reject(this.runFailure);

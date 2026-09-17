@@ -14,13 +14,13 @@
 | MWF 构建入口 `packages/mwf/dist/cli.js` | commit `7b8be0e59647c90227c0cb945b279d7fa7ab14ef` / 0.1.0 | infra-mwf 调用 add/propose；稳定 request_id、私有输入文件、原生锁/请求回执；候选不提升为正式规则；不自动初始化项目 | `tests/harness.test.ts` 原生失败与回执恢复；`tests/browser.spec.ts` 保存失败后重试 |
 | Linux 监督 ABI | 当前 Linux 环境；Python 3 | prctl subreaper、pidfd、`/proc` starttime、boot ID 与 flock；未知世代或缺少清理证据时不解锁 | `tests/platform.test.ts`，包含脱离进程组、后端 SIGKILL 与延迟启动 |
 
-尚未接入正式应用的内部依赖：MWF 锁内修订包装器。对应探针仅用于实施参考，落地时必须补入本表及应用测试。MWF 固定 commit 为 `7b8be0e59647c90227c0cb945b279d7fa7ab14ef` / 0.1.0，pi-mcp-adapter 为 2.32.1；应用交接记录与已接入的 MWF 长期记忆保存保持独立，不冒充 MWF schema。
+MWF 锁内修订包装器已在 M4c 接入，内部入口与应用证据见下文。MWF 固定 commit 为 `7b8be0e59647c90227c0cb945b279d7fa7ab14ef` / 0.1.0，pi-mcp-adapter 为 2.32.1；应用交接记录与已接入的 MWF 长期记忆保存保持独立，不冒充 MWF schema。
 
 升级必须先停止接收新运行并收束活动进程，处理待保存及排队项，在静止状态备份应用数据、原生会话和相关配置。更改固定版本后重跑上述真实应用契约，再补齐受影响的配置、fork 和记忆场景；不能只通过编译或探针就替换正在使用的内核。完整手动升级清单由 M4/M5 交付。
 
 用户于 2026-09-17 接受 macOS 在本机 Linux 环境（Docker Desktop/Lima）运行后端和工具。沿用 Linux 监督器；不实现或宣称 macOS 原生 subreaper。容器启动打包及挂载约定在 M4/M5 完成，macOS 实机验证仍按既定决定后置。
 
-配置限制：文件锁只能协调遵守原生锁协议的写入者，无法防止外部编辑器在锁内强行覆写或删除文件；写入仍沿用原生后端的原地保存语义，不宣称跨文件事务或断电原子性。外部已完成修改由字节修订检测，损坏文件不自动重置。工作区设置已提供原生默认模型与信任修改。provider 自定义连接编辑仍待 M4；已有 OAuth 凭据沿用原生机制，当前 UI 提供 API key 编辑与凭据移除，不宣称提供 OAuth 登录向导。
+配置限制：文件锁只能协调遵守原生锁协议的写入者，无法防止外部编辑器在锁内强行覆写或删除文件；写入仍沿用原生后端的原地保存语义，不宣称跨文件事务或断电原子性。外部已完成修改由字节修订检测，损坏文件不自动重置。工作区设置已提供原生默认模型与信任修改。provider 自定义连接编辑已在 M4b 接入；已有 OAuth 凭据沿用原生机制，当前 UI 提供 API key 编辑与凭据移除，不宣称提供 OAuth 登录向导。
 
 配置检查会加载用户的原生全局扩展及获准的项目资源，扩展可执行本机代码，因此不能当作无副作用文件读取。应用为检查占用分支维护名额并记录监督操作，未核验收束前不释放分支。原生全局信任钩子可能覆盖或记住用户保存的 trust.json 选择；界面展示实际 resolver 结果，应用不强行传 CLI 信任覆盖。没有项目资源时，原生可以返回无需确认的允许状态；它不等于应用新写入了信任记录。
 
@@ -34,4 +34,15 @@
 
 原生 update 的公开 CLI 没有比较修订号后再写入的接口。本适配在相同项目锁内比较原记录 hash，再调用原生 update，将结果回执写入 `.mwf/local/parallel-pi/<request-id>.json`，与记录和索引共用同一可恢复文件事务。重试先验证请求指纹/回执，不因旧修订号再次覆盖当前记录。初始化同样保存回执，并保留已存在的 git_mode。受监督子进程收束后才释放分支维护占用；SQLite 仅保存待写意图与结果，不作为记忆正文的第二份权威来源。
 
-查看每页 20 条，召回沿用原生最多 100 条限制；worker 仍扫描原生文件，不建独立索引。读取未初始化工作区不创建 .mwf。应用内自动 agent bootstrap/MCP 接入在后续阶段完成，本段仅证明 UI 与命令 API 的原生召回和纠正。
+查看每页 20 条，召回沿用原生最多 100 条限制；worker 仍扫描原生文件，不建独立索引。读取未初始化工作区不创建 .mwf。M4c 的证据范围是 UI 与命令 API 的原生召回和纠正；自动 agent 接入见下文 M4d。
+
+
+### 自动 agent 记忆接入（M4d）
+
+`infra-mwf/src/extension.mjs` 通过 pi 的显式扩展参数加载，调用固定版 MWF `pi-adapter.js` 的 `createAdapter`。仅已有 `.mwf/config.json` 的工作区启用 bootstrap/MCP；发送消息不会初始化记忆或安装项目资源。每次 RPC 运行重新绑定当前真实 worktree 路径。
+
+已有项目扩展只有在路径、生成模板和内嵌配置均匹配时才复用其 bootstrap。模型 context 只保留当前适配器的最新 bootstrap；Git 跟踪扩展残留的旧绝对路径及历史 bootstrap 不进入当前模型输入，原生 JSONL 历史保持原样。该过滤仅处理已知 MWF custom message，不构成任意用户扩展的安全沙箱。
+
+固定版 `pi-mcp-adapter` 2.32.1 已是 infra-mwf 运行时依赖。通过公开 `MCP_RUNTIME_REGISTER_EVENT` / `MCP_RUNTIME_REGISTER_VERSION` 复用已有 adapter，注册当前根目录的 `parallel_mwf` 服务；没有 adapter 时用 `createMcpAdapter` 安装应用实例。服务调用原生 MWF MCP CLI，跨根请求由原生 `ROOT_NOT_ALLOWED` 拒绝。已有用户 MCP 配置与工具保留；注册冲突显示错误，不覆盖同名服务。原生工具写入失败遵循原生 tool result；应用显式关键保存的持久化待办与暂停机制仍由 M4c 负责。
+
+配置检查加载资源后显式结束 worker，由现有监督器收束扩展启动的 MCP 子进程后才释放维护名额。可见原生 custom message 通过 RPC notice 进入应用事件记录与会话通知，刷新后可恢复。升级契约新增 `tests/memory-agent.test.ts` 和 `tests/memory.spec.ts`，前者使用受控 provider 驱动真实 pi/MWF/MCP，并非外部模型质量验证。

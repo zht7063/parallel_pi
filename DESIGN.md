@@ -92,3 +92,6 @@
 `ConnectionSettings.vue` 是设置面板内的自定义连接表单，继续消费现有样式和 token。连接独立读取/保存，不接受其他配置文件的修订；读取失败可就地重试，冲突重新读取保留输入，退出保护由父 AppDialog 统一处理。连接切换前保存或明确放弃草稿；移除显示 provider、模型与内联认证影响。地址中私密部分不回显，已有高级参数保留。浏览器证据为 `tests/connections.spec.ts`。
 
 `MemoryDialog.vue` 复用 AppDialog、原生 select、共享 resize-none 文本域和就地反馈。入口按分支工作区提供；初始化展示 track/ignore 与文件影响，默认 track，已有策略保留。列表按原生分类/状态展示，候选不等于确认规则；可按关键词/路径召回并查看来源、scope 与正文。纠正遇到冲突保留输入并要求对照已保存版本；未确认保存作为可见待办，重试沿用原意图，暂不重试须说明不会回滚文件。证据入口为 `tests/memory.spec.ts`。
+
+
+会话中的原生扩展可见消息归入 `Conversation.vue` 的“运行通知”区域，消费现有 warning 与 message-text 样式，不增加 token 或 toast。通知绑定当前/最近运行的持久事件，结束与刷新后仍可查看；隐藏的 bootstrap 内容不展示。证据入口为 `tests/memory.spec.ts`。

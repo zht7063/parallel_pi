@@ -109,6 +109,34 @@ test('workspace memory initializes explicitly, recalls and corrects with visible
     await expect(dialog.getByText(/原生召回结果.*0 条/)).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    writeFileSync(join(root, '.mwf/config.json'), '{broken memory config');
+    await page.getByRole('button', { name: '预览 Memory source', exact: true }).dblclick();
+    await page.getByRole('button', { name: '恢复未启动的队列', exact: true }).click();
+    await page.getByLabel('消息', { exact: true }).fill('Check visible memory failure');
+    await page.getByRole('button', { name: '发送', exact: true }).click();
+    await expect
+      .poll(
+        async () => {
+          const current = await (await page.request.get('/api/snapshot')).json();
+          return current.runs.find((item: { sessionId: string }) => item.sessionId === session.id)
+            ?.state;
+        },
+        { timeout: 20000 },
+      )
+      .toBe('succeeded');
+    await expect(page.getByRole('region', { name: '运行通知' })).toContainText(
+      'MWF bootstrap unavailable',
+    );
+    await page.reload();
+    await expect(page.getByRole('region', { name: '运行通知' })).toContainText(
+      'MWF bootstrap unavailable',
+    );
+    await page.setViewportSize({ width: 390, height: 844 });
+    const notice = page.getByRole('region', { name: '运行通知' });
+    await notice.scrollIntoViewIfNeeded();
+    expect(await notice.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await page.screenshot({ path: 'test-results/memory-notice-narrow.png', fullPage: true });
     expect(errors).toEqual([]);
   } finally {
     rmSync(root, { recursive: true, force: true });
