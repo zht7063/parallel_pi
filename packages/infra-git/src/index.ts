@@ -9,6 +9,7 @@ import type {
   RepositoryFacts,
   ProcessSupervisor,
   GitCommitResult,
+  GitCommitPreview,
   GitHookEvent,
 } from '@parallel-pi/application';
 
@@ -85,7 +86,7 @@ export function createGit(
     }
   }
   async function transaction(
-    action: 'commit' | 'recover',
+    action: 'commit' | 'recover' | 'preview' | 'review',
     input: { directory: string; operationId: string; jobId: string },
     progress?: (event: GitHookEvent) => void,
   ) {
@@ -97,7 +98,7 @@ export function createGit(
     const path = join(commitDirectory, input.operationId + '.json');
     writeFileSync(path, JSON.stringify(input), { flag: 'wx', mode: 0o600 });
     let buffer = '',
-      result: GitCommitResult | undefined;
+      result: GitCommitResult | GitCommitPreview | undefined;
     try {
       await writeGit(
         input.directory,
@@ -124,7 +125,13 @@ export function createGit(
           },
         },
       );
-      if (!result || !['committed', 'failed', 'uncertain'].includes(result.state))
+      if (
+        !result ||
+        (action === 'preview'
+          ? !('tree' in result)
+          : !('state' in result) ||
+            !['committed', 'failed', 'uncertain', 'reviewed'].includes(result.state))
+      )
         throw new Error('Invalid Git transaction result');
       return result;
     } finally {
@@ -132,11 +139,25 @@ export function createGit(
     }
   }
   return {
-    commitFiles(input, progress) {
-      return transaction('commit', input, progress);
+    async previewCommit(input) {
+      const result = await transaction('preview', { ...input, jobId: input.operationId });
+      if (!('tree' in result)) throw new Error('Invalid Git commit preview');
+      return result;
     },
-    recoverCommit(input) {
-      return transaction('recover', input);
+    async commitFiles(input, progress) {
+      const result = await transaction('commit', input, progress);
+      if (!('state' in result)) throw new Error('Invalid Git commit result');
+      return result;
+    },
+    async reviewCommit(input) {
+      const result = await transaction('review', input);
+      if (!('state' in result)) throw new Error('Invalid Git review result');
+      return result;
+    },
+    async recoverCommit(input) {
+      const result = await transaction('recover', input);
+      if (!('state' in result)) throw new Error('Invalid Git recovery result');
+      return result;
     },
     async inspectChanges(directory, operationId) {
       if (!supervisor) return inspectGitChanges(directory);

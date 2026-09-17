@@ -53,7 +53,7 @@ function setup() {
     memory: createMemoryAccess(supervisor, join(root, 'memory-inputs')),
     handoffs: createHandoffStore(join(root, 'handoffs')),
     attachments: createAttachmentStore(join(root, 'attachments')),
-    git: createGit(supervisor),
+    git: createGit(supervisor, join(root, 'git-transactions')),
     runtime: {
       id: randomUUID,
       now: Date.now,
@@ -1128,5 +1128,193 @@ test(
       'failed',
     );
     assert.equal(app.snapshot().state.lanes.find((item) => item.id === lane.id)!.state, 'paused');
+  },
+);
+
+test(
+  'application commits hold the branch, persist hook progress and deduplicate the explicit request',
+  { timeout: 30000 },
+  async (t) => {
+    const { root, directory, store, app } = setup();
+    t.after(async () => {
+      await app.close();
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    });
+    await app.initialize();
+    await app.addProject(directory);
+    const lane = app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/main')!;
+    const session = await app.createSession(lane.id, 'After commit', model);
+    writeFileSync(
+      join(directory, '.git/hooks/pre-commit'),
+      `#!/bin/sh\nprintf once >>'${join(root, 'hooks')}'; while [ ! -f '${join(root, 'release')}' ]; do sleep 0.1; done\n`,
+      { mode: 0o700 },
+    );
+    const view = await app.inspectGit(lane.id),
+      preview = await app.previewGitCommit(lane.id, view.revision, ['code']);
+    assert.match(preview.diff, /dirty/);
+    const input = {
+      laneId: lane.id,
+      requestId: 'application-commit',
+      revision: preview.revision,
+      tree: preview.tree,
+      paths: preview.paths,
+      message: 'Explicit whole-file commit',
+    };
+    const committing = app.commitGit(input);
+    await until(() => app.snapshot().state.gitCommits[0]?.phase === 'hook', 'native hook progress');
+    assert.equal(app.snapshot().state.gitCommits[0]!.hook, 'pre-commit');
+    const duplicate = await app.commitGit(input);
+    assert.equal(duplicate.state, 'pending');
+    assert.equal(app.snapshot().state.gitCommits.length, 1);
+    await assert.rejects(app.commitGit({ ...input, message: 'different' }), /conflicts/);
+    await assert.rejects(app.inspectGit(lane.id), /occupied/);
+    const run = app.enqueue({
+      requestId: 'queued-after-commit',
+      sessionId: session.id,
+      text: 'after commit',
+      attachmentIds: [],
+    });
+    assert.equal(state(app, run.id).state, 'queued');
+    await assert.rejects(app.resume(lane.id), /pending Git commit/);
+    writeFileSync(join(root, 'release'), 'continue');
+    const result = await committing;
+    assert.equal(result.state, 'committed', result.error ?? '');
+    assert.equal(
+      result.commit,
+      execFileSync('git', ['-C', directory, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+    );
+    assert.deepEqual(await app.commitGit(input), result);
+    assert.equal(readFileSync(join(root, 'hooks'), 'utf8'), 'once');
+    await until(() => state(app, run.id).state === 'succeeded', 'queued task after commit');
+    assert.ok(app.events(0).some((event) => event.type === 'git.commit-hook'));
+  },
+);
+
+test(
+  'a lost Git commit confirmation recovers after restart only after all old workers are proven stopped',
+  { timeout: 30000 },
+  async (t) => {
+    const { root, directory, store, deps } = setup();
+    let app = createHarness(deps);
+    t.after(async () => {
+      await app.close();
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    });
+    await app.initialize();
+    await app.addProject(directory);
+    const lane = app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/main')!;
+    writeFileSync(
+      join(directory, '.git/hooks/pre-commit'),
+      `#!/bin/sh\nprintf once >>'${join(root, 'hooks')}'\n`,
+      { mode: 0o700 },
+    );
+    const commit = deps.git.commitFiles.bind(deps.git),
+      recover = deps.git.recoverCommit.bind(deps.git);
+    deps.git.commitFiles = async (input, progress) => {
+      await commit(input, progress);
+      throw new Error('Lost acknowledgement');
+    };
+    deps.git.recoverCommit = async () => {
+      throw new Error('Recovery temporarily unavailable');
+    };
+    const view = await app.inspectGit(lane.id),
+      preview = await app.previewGitCommit(lane.id, view.revision, ['code']);
+    const job = await app.commitGit({
+      laneId: lane.id,
+      requestId: 'lost-git-ack',
+      revision: preview.revision,
+      tree: preview.tree,
+      paths: ['code'],
+      message: 'Recover this commit',
+    });
+    assert.equal(job.state, 'uncertain');
+    const head = execFileSync('git', ['-C', directory, 'rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+    }).trim();
+    await assert.rejects(app.resume(lane.id), /recovery/);
+    await app.close();
+    const oldRecovery = app
+      .snapshot()
+      .state.operations.find(
+        (item) => item.gitCommitId === job.id && item.kind === 'recover-git-commit',
+      )!;
+    const proof = deps.supervisor.recover.bind(deps.supervisor);
+    deps.supervisor.recover = async (id) =>
+      id === oldRecovery.id
+        ? { settled: false, exitCode: null, reason: 'Old recovery worker is not yet verified' }
+        : proof(id);
+    let recoverCalls = 0;
+    deps.git.recoverCommit = async (input) => {
+      recoverCalls++;
+      return recover(input);
+    };
+    deps.git.commitFiles = async () => {
+      throw new Error('Commit must never replay on recovery');
+    };
+    app = createHarness(deps);
+    await app.initialize();
+    assert.equal(recoverCalls, 0, 'a prior recovery worker blocks a second index writer');
+    assert.equal(
+      app.snapshot().state.lanes.find((item) => item.id === lane.id)!.state,
+      'recovering',
+    );
+    deps.supervisor.recover = proof;
+    const restored = await app.reconcileGitCommit(job.id);
+    assert.equal(restored.state, 'committed', restored.error ?? '');
+    assert.equal(restored.commit, head);
+    assert.equal(recoverCalls, 1);
+    assert.equal(readFileSync(join(root, 'hooks'), 'utf8'), 'once');
+    assert.equal(app.snapshot().state.lanes.find((item) => item.id === lane.id)!.state, 'paused');
+  },
+);
+
+test(
+  'explicit external Git review keeps a moved ref and index, records the prior uncertainty and leaves the lane paused',
+  { timeout: 30000 },
+  async (t) => {
+    const { root, directory, store, app } = setup();
+    t.after(async () => {
+      await app.close();
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    });
+    await app.initialize();
+    await app.addProject(directory);
+    const lane = app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/main')!;
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-C', directory, ...args], { encoding: 'utf8' }).trim();
+    const head = git('rev-parse', 'HEAD'),
+      index = readFileSync(join(directory, '.git/index'));
+    writeFileSync(
+      join(directory, '.git/hooks/post-commit'),
+      '#!/bin/sh\ngit update-ref refs/heads/main "$(git rev-parse HEAD^)"\n',
+      { mode: 0o700 },
+    );
+    const view = await app.inspectGit(lane.id),
+      preview = await app.previewGitCommit(lane.id, view.revision, ['code']);
+    const job = await app.commitGit({
+      laneId: lane.id,
+      requestId: 'external-review',
+      revision: preview.revision,
+      tree: preview.tree,
+      paths: ['code'],
+      message: 'Created before external ref movement',
+    });
+    assert.equal(job.state, 'uncertain');
+    assert.ok(job.commit);
+    assert.equal(git('rev-parse', 'HEAD'), head);
+    const result = await app.reconcileGitCommit(job.id, true);
+    assert.equal(result.state, 'reviewed', result.error ?? '');
+    assert.equal(result.commit, job.commit);
+    assert.match(result.error!, /branch moved/);
+    assert.equal(git('rev-parse', 'HEAD'), head);
+    assert.deepEqual(readFileSync(join(directory, '.git/index')), index);
+    assert.equal(readFileSync(join(directory, 'code'), 'utf8'), 'dirty');
+    assert.ok(app.events(0).some((event) => event.type === 'git.commit-reviewed'));
+    assert.equal(app.snapshot().state.lanes.find((item) => item.id === lane.id)!.state, 'paused');
+    await app.resume(lane.id);
+    assert.equal(app.snapshot().state.lanes.find((item) => item.id === lane.id)!.state, 'ready');
   },
 );

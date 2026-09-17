@@ -34,7 +34,12 @@ export interface Operation {
     | 'inspect-config'
     | 'inspect-memory'
     | 'change-memory'
-    | 'inspect-git';
+    | 'inspect-git'
+    | 'preview-git-commit'
+    | 'commit-git'
+    | 'recover-git-commit'
+    | 'review-git-commit';
+  gitCommitId?: string;
   memorySaveId?: string;
   memoryChangeId?: string;
   requestId?: string;
@@ -58,6 +63,7 @@ export interface AppState {
   drafts: Draft[];
   memorySaves: MemorySave[];
   memoryChanges: MemoryChangeJob[];
+  gitCommits: GitCommitJob[];
 }
 export interface AppEvent {
   cursor: number;
@@ -88,8 +94,32 @@ export interface RepositoryFacts {
   remoteBranches: { ref: string; name: string; remote: string; head: string }[];
   worktrees: { directory: string; ref: string | null; head: string; locked: boolean }[];
 }
+export interface GitCommitPreview {
+  revision: string;
+  head: string;
+  ref: string;
+  tree: string;
+  paths: string[];
+  diff: string;
+}
+export interface GitCommitJob {
+  id: string;
+  requestId: string;
+  laneId: string;
+  directory: string;
+  revision: string;
+  tree: string;
+  paths: string[];
+  message: string;
+  state: 'pending' | 'committed' | 'failed' | 'uncertain' | 'reviewed';
+  phase: 'preparing' | 'hook' | 'committing' | 'reconciling' | 'done';
+  hook: string | null;
+  commit: string | null;
+  error: string | null;
+  createdAt: number;
+}
 export interface GitCommitResult {
-  state: 'committed' | 'failed' | 'uncertain';
+  state: 'committed' | 'failed' | 'uncertain' | 'reviewed';
   commit: string | null;
   error: string | null;
 }
@@ -99,6 +129,13 @@ export interface GitHookEvent {
   exitCode?: number | null;
 }
 export interface WorkspaceAccess {
+  previewCommit(input: {
+    binding?: { repository: string; ref: string };
+    directory: string;
+    operationId: string;
+    revision: string;
+    paths: string[];
+  }): Promise<GitCommitPreview>;
   commitFiles(
     input: {
       directory: string;
@@ -111,7 +148,14 @@ export interface WorkspaceAccess {
     },
     progress: (event: GitHookEvent) => void,
   ): Promise<GitCommitResult>;
+  reviewCommit(input: {
+    binding?: { repository: string; ref: string };
+    directory: string;
+    operationId: string;
+    jobId: string;
+  }): Promise<GitCommitResult>;
   recoverCommit(input: {
+    binding?: { repository: string; ref: string };
     directory: string;
     operationId: string;
     jobId: string;

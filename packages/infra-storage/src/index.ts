@@ -38,6 +38,7 @@ export function openStore(directory: string): AppStore {
       drafts: [],
       memorySaves: [],
       memoryChanges: [],
+      gitCommits: [],
     };
     db.prepare('INSERT OR IGNORE INTO app_state VALUES (1,?)').run(JSON.stringify(initial));
   } catch (error) {
@@ -61,6 +62,7 @@ export function openStore(directory: string): AppStore {
     // Additive pre-release data: older M2 snapshots have no memory save jobs.
     value.memorySaves ??= [];
     value.memoryChanges ??= [];
+    value.gitCommits ??= [];
     return value;
   }
   function cursor(): number {

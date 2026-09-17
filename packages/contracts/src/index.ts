@@ -12,7 +12,28 @@ export interface ModelChoice {
   provider: string;
   model: string;
 }
+export interface GitCommitSnapshot {
+  id: string;
+  requestId: string;
+  laneId: string;
+  paths: string[];
+  message: string;
+  state: 'pending' | 'committed' | 'failed' | 'uncertain' | 'reviewed';
+  phase: 'preparing' | 'hook' | 'committing' | 'reconciling' | 'done';
+  hook: string | null;
+  commit: string | null;
+  error: string | null;
+}
+export interface GitCommitPreview {
+  revision: string;
+  head: string;
+  ref: string;
+  tree: string;
+  paths: string[];
+  diff: string;
+}
 export interface WorkspaceSnapshot {
+  gitCommits: GitCommitSnapshot[];
   cursor: number;
   drafts: { sessionId: string; revision: number; text: string; attachmentIds: string[] }[];
   concurrency: number;

@@ -75,6 +75,12 @@ test('branch changes show staged and working content, retain failed reads and fi
     await dialog.getByRole('region', { name: '工作区内容', exact: true }).scrollIntoViewIfNeeded();
     expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
     await page.screenshot({ path: 'test-results/git-changes-narrow.png', fullPage: true });
+    await dialog.getByRole('checkbox', { name: '提交 new.txt', exact: true }).check();
+    rmSync(join(root, 'new.txt'));
+    await dialog.getByRole('button', { name: '重新读取变更' }).click();
+    await expect(dialog.getByRole('region', { name: '已不在变更列表中的选择' })).toBeVisible();
+    await dialog.getByRole('button', { name: '移除选择 new.txt', exact: true }).click();
+    await expect(dialog.getByRole('region', { name: '已不在变更列表中的选择' })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
     expect(readFileSync(join(root, '.git/index'))).toEqual(index);

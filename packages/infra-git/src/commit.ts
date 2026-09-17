@@ -1,4 +1,4 @@
-import type { GitCommitResult, GitHookEvent } from '@parallel-pi/application';
+import type { GitCommitResult, GitHookEvent, GitCommitPreview } from '@parallel-pi/application';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
@@ -91,14 +91,6 @@ function receipt(path: string): { commit: string } | null {
   return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
 }
 
-export interface GitCommitPreview {
-  revision: string;
-  head: string;
-  ref: string;
-  tree: string;
-  paths: string[];
-  diff: string;
-}
 function select(view: Awaited<ReturnType<typeof inspectGitChanges>>, paths: string[]) {
   if (!paths.length || new Set(paths).size !== paths.length)
     throw new Error('Select distinct whole files');
@@ -177,8 +169,31 @@ function hookWarning(jobDirectory: string) {
   return failures.length ? failures.join('; ') : null;
 }
 
+/** Explicit user review only, after process cleanup. Keeps current refs/index/worktree unchanged. */
+export function reviewGitCommit(jobDirectory: string): GitCommitResult {
+  const reviewPath = join(jobDirectory, 'reviewed.json');
+  if (existsSync(reviewPath)) return JSON.parse(readFileSync(reviewPath, 'utf8'));
+  if (existsSync(join(jobDirectory, 'result.json')))
+    return JSON.parse(readFileSync(join(jobDirectory, 'result.json'), 'utf8'));
+  const manifestPath = join(jobDirectory, 'manifest.json');
+  if (!existsSync(manifestPath)) return recoverGitCommit(jobDirectory);
+  const manifest: Manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  if (ownedLock(manifest)) unlinkSync(manifest.index + '.lock');
+  if (existsSync(manifest.index + '.lock'))
+    throw new Error('An unowned Git index lock remains; inspect it externally before continuing');
+  const result: GitCommitResult = {
+    state: 'reviewed',
+    commit: receipt(join(jobDirectory, 'committed.json'))?.commit ?? null,
+    error: '原提交结果未自动确认；已记录外部核对并保留当前 Git 状态，不再自动修复索引。',
+  };
+  durable(reviewPath, result);
+  return result;
+}
+
 /** Caller must first prove the previous worker and all descendants have exited. Never replays hooks. */
 export function recoverGitCommit(jobDirectory: string): GitCommitResult {
+  if (existsSync(join(jobDirectory, 'reviewed.json')))
+    return JSON.parse(readFileSync(join(jobDirectory, 'reviewed.json'), 'utf8'));
   if (!existsSync(join(jobDirectory, 'request.json')))
     return {
       state: 'failed',

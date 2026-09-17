@@ -1,6 +1,27 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Harness, MemoryInput, MemoryChange, MemoryQuery } from '@parallel-pi/application';
-import type { WorkspaceSnapshot, WorkspaceEvent } from '@parallel-pi/contracts';
+import type {
+  Harness,
+  MemoryInput,
+  MemoryChange,
+  MemoryQuery,
+  GitCommitJob,
+} from '@parallel-pi/application';
+import type { WorkspaceSnapshot, WorkspaceEvent, GitCommitSnapshot } from '@parallel-pi/contracts';
+
+function projectGitCommit({
+  id,
+  requestId,
+  laneId,
+  paths,
+  message,
+  state,
+  phase,
+  hook,
+  commit,
+  error,
+}: GitCommitJob): GitCommitSnapshot {
+  return { id, requestId, laneId, paths, message, state, phase, hook, commit, error };
+}
 
 export function projectSnapshot(app: Harness): WorkspaceSnapshot {
   const { state, cursor } = app.snapshot();
@@ -11,6 +32,7 @@ export function projectSnapshot(app: Harness): WorkspaceSnapshot {
       Math.max(lastActivity.get(run.sessionId) ?? 0, run.createdAt, run.endedAt ?? 0),
     );
   return {
+    gitCommits: state.gitCommits.map(projectGitCommit),
     cursor,
     concurrency: state.concurrency,
     drafts: state.drafts,
@@ -248,6 +270,31 @@ export async function command(app: Harness, input: Record<string, unknown>): Pro
       });
       return { id: run.id, state: run.state };
     }
+    case 'git.preview-commit':
+    case 'git.commit': {
+      if (!Array.isArray(input.paths)) throw new Error('Select whole files');
+      const paths = input.paths.map((path) => string(path, 8192));
+      const laneId = id(input.laneId),
+        revision = string(input.revision, 128);
+      return input.type === 'git.preview-commit'
+        ? app.previewGitCommit(laneId, revision, paths)
+        : app
+            .commitGit({
+              laneId,
+              revision,
+              paths,
+              requestId: id(input.requestId),
+              tree: string(input.tree, 128),
+              message: string(input.message, 65536),
+            })
+            .then(projectGitCommit);
+    }
+    case 'git.review':
+      if (input.confirmed !== true)
+        throw new Error('Confirm external Git inspection before continuing');
+      return app.reconcileGitCommit(id(input.jobId), true).then(projectGitCommit);
+    case 'git.reconcile':
+      return app.reconcileGitCommit(id(input.jobId)).then(projectGitCommit);
     case 'git.inspect':
       return app.inspectGit(id(input.laneId));
     case 'memory.inspect': {

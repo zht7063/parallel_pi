@@ -47,8 +47,15 @@ MWF 锁内修订包装器已在 M4c 接入，内部入口与应用证据见下�
 
 配置检查加载资源后显式结束 worker，由现有监督器收束扩展启动的 MCP 子进程后才释放维护名额。可见原生 custom message 通过 RPC notice 进入应用事件记录与会话通知，刷新后可恢复。升级契约新增 `tests/memory-agent.test.ts` 和 `tests/memory.spec.ts`，前者使用受控 provider 驱动真实 pi/MWF/MCP，并非外部模型质量验证。
 
-### Git 提交事务基础（M4e2，应用入口待接入）
+### Git 提交事务基础（M4e2）
 
 `infra-git` 增加实际提交树预览及受监督 commit/recover worker。原生 `--only`、私有 `GIT_INDEX_FILE`、`--pathspec-from-file`/NUL 路径和 `reference-transaction` 是新契约；当前在 Git 2.43.0 验证。临时钩子启动器不改写原钩子，调用原钩子时恢复原先的 `GIT_CONFIG_PARAMETERS`，使其内部 Git 命令继续读取原配置。原生消息钩子可以规范提交消息，树守卫只允许批准的文件内容。
 
-调用方须先核验旧 worker 已收束，才能对账本地事务目录并修复 index；恢复不重放钩子。外部 index/branch 变化或未知锁归属返回 uncertain，不能自动覆盖。具体测试及尚未接入的应用任务/UI 边界见 `evidence/m4-git-commit-core.md`。Git 预览修订现在同时绑定原始状态和实际显示的 diff；选择后的提交预览另绑定原生过滤后的树。
+调用方须先核验旧 worker 已收束，才能对账本地事务目录并修复 index；恢复不重放钩子。外部 index/branch 变化或未知锁归属返回 uncertain，不能自动覆盖。核心阶段测试边界见 `evidence/m4-git-commit-core.md`；应用入口已在下述 M4e3 接入。Git 预览修订现在同时绑定原始状态和实际显示的 diff；选择后的提交预览另绑定原生过滤后的树。
+
+
+### Git 应用任务与外部核对（M4e3）
+
+SQLite 原子保存提交意图和第一项操作，HTTP 重试沿用原请求身份并校验完整意图。实际树预览、提交、恢复与明确外部核对使用受监督 worker；恢复时的仓库身份检查也在该 worker 内完成。同分支所有旧操作均已收束后才允许事务恢复，不以 HTTP 连接或页面生命周期判断提交结束。
+
+外部核对仅在用户明确确认后记录 reviewed 回执，移除仍属于原事务的索引锁，保留当前 ref/index/工作区和原不确定原因；未知归属的锁仍拒绝处理。后续恢复读取该回执，不再自动修复索引。此流程不声明原提交成功，分支保持暂停直到用户明确恢复。应用测试和浏览器证据见 `evidence/m4-git-commits.md`。

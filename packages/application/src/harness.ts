@@ -1,3 +1,4 @@
+import { createGitCommits, gitBlocked } from './git-commits.ts';
 import { validateConfigurationRevision, validateDefaultModel } from './configuration.ts';
 import type { ConfigurationAccess } from './configuration.ts';
 import { createMemoryEditor } from './memory-editor.ts';
@@ -404,6 +405,7 @@ export function createHarness(deps: {
       (item) =>
         !maintenance.has(item.id) &&
         !memoryBlocked(state, item.id) &&
+        !gitBlocked(state, item.id) &&
         !state.runs.some(
           (run) =>
             run.laneId === item.id &&
@@ -443,7 +445,7 @@ export function createHarness(deps: {
       entry.done = execute(id);
     }
   }
-  async function recoverLane(laneId: string) {
+  async function recoverLane(laneId: string, reviewJobId?: string) {
     if (closing) throw new Error('Application is shutting down');
     if ([...active.values()].some((item) => item.laneId === laneId) || maintenance.has(laneId))
       throw new Error('Branch is still occupied');
@@ -459,17 +461,28 @@ export function createHarness(deps: {
           setLane(laneId, 'recovering', proof.reason);
         }
       }
-      for (const operation of snapshot().state.operations.filter(
+      const pending = snapshot().state.operations.filter(
         (item) => item.laneId === laneId && ['pending', 'uncertain'].includes(item.state),
-      )) {
+      );
+      for (const operation of pending) {
         const proof = await supervisor.recover(operation.id);
         if (!proof.settled) {
           safe = false;
           setLane(laneId, 'recovering', proof.reason);
-          continue;
         }
+      }
+      // Reconciliation may write an index. Reap the whole lane before any of it,
+      // including an earlier recovery worker interrupted by another restart.
+      if (!safe) return false;
+      for (const operation of pending) {
+        if (['commit-git', 'recover-git-commit', 'review-git-commit'].includes(operation.kind))
+          continue;
         try {
-          if (['inspect-config', 'inspect-memory', 'inspect-git'].includes(operation.kind)) {
+          if (
+            ['inspect-config', 'inspect-memory', 'inspect-git', 'preview-git-commit'].includes(
+              operation.kind,
+            )
+          ) {
             store.transaction((tx) => {
               tx.state.operations.find((item) => item.id === operation.id)!.state = 'failed';
               tx.emit(
@@ -564,10 +577,21 @@ export function createHarness(deps: {
         }
       }
       if (safe)
+        for (const job of snapshot().state.gitCommits.filter(
+          (item) => item.laneId === laneId && ['pending', 'uncertain'].includes(item.state),
+        )) {
+          if ((await gitService.reconcile(job.id, job.id === reviewJobId)).state === 'uncertain') {
+            safe = false;
+            break;
+          }
+        }
+      if (safe)
         setLane(
           laneId,
           'paused',
-          'Recovery verified; inspect the workspace and explicitly resume queued work',
+          reviewJobId
+            ? '已记录外部 Git 核对；请检查工作区并明确恢复队列。'
+            : 'Recovery verified; inspect the workspace and explicitly resume queued work',
         );
       return safe;
     } finally {
@@ -635,6 +659,7 @@ export function createHarness(deps: {
       throw cause;
     }
   }
+  const gitService = createGitCommits({ store, git, supervisor, runtime, withLane, prepare });
   const memoryService = createMemoryService({
     store,
     memory: deps.memory,
@@ -644,6 +669,16 @@ export function createHarness(deps: {
     prepare,
   });
   return {
+    previewGitCommit: gitService.previewGitCommit,
+    commitGit: gitService.commitGit,
+    async reconcileGitCommit(jobId: string, reviewed = false) {
+      requireReady();
+      const job = snapshot().state.gitCommits.find((item) => item.id === jobId);
+      if (!job) throw new Error('Git commit request not found');
+      if (['pending', 'uncertain'].includes(job.state))
+        await recoverLane(job.laneId, reviewed ? jobId : undefined);
+      return snapshot().state.gitCommits.find((item) => item.id === jobId)!;
+    },
     ...memoryService,
     ...createMemoryEditor({ store, memory: deps.memory, supervisor, runtime, withLane, prepare }),
     async inspectGit(laneId: string) {
@@ -724,6 +759,10 @@ export function createHarness(deps: {
           ['pending', 'uncertain'].includes(item.state),
         ))
           tx.state.lanes.find((item) => item.id === operation.laneId)!.state = 'recovering';
+        for (const job of tx.state.gitCommits.filter((item) =>
+          ['pending', 'uncertain'].includes(item.state),
+        ))
+          tx.state.lanes.find((item) => item.id === job.laneId)!.state = 'recovering';
         tx.emit('application.recovering', {});
       });
       for (const branch of snapshot().state.lanes.filter((item) => item.state === 'recovering'))
@@ -1156,6 +1195,8 @@ export function createHarness(deps: {
     async resume(laneId: string) {
       requireReady();
       if (lane(laneId).state === 'recovering') throw new Error('Verify recovery before resuming');
+      if (gitBlocked(snapshot().state, laneId))
+        throw new Error('Reconcile the pending Git commit before resuming');
       if (memoryBlocked(snapshot().state, laneId))
         throw new Error('Resolve the pending memory save before resuming');
       if (

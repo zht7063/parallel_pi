@@ -33,7 +33,7 @@ export async function createBackend(options: {
       store,
       supervisor,
       engine,
-      git: createGit(supervisor),
+      git: createGit(supervisor, join(options.dataDirectory, 'git-transactions')),
       memory: createMemoryAccess(supervisor, join(options.dataDirectory, 'memory-inputs')),
       handoffs: createHandoffStore(join(options.dataDirectory, 'handoffs')),
       attachments: createAttachmentStore(join(options.dataDirectory, 'attachments')),
