@@ -8,7 +8,7 @@
 | A02 | 远端分支本地化、名称冲突不覆盖、不自动 merge | harness.test.ts 的 branch intentions、map.spec.ts | 待最终复核 |
 | A03 | 单/双击不漂移，浮层/返回恢复视口，不启动运行 | map.spec.ts | 待键盘与完整浏览器复核 |
 | A04 | 继续/接续/独立/fork、来源、图边、当前代码语义 | harness.test.ts、engine.test.ts、map.spec.ts | M5b 已验证失败/取消/重启历史及取消点分叉；来源与完整 A04 待最终复核 |
-| A05 | 同列互斥、跨列并行、默认并发 2 且可配 | domain.test.ts、harness.test.ts | 待最终复核；M5a 补齐元数据检查占用 |
+| A05 | 同列互斥、跨列并行、默认并发 2 且可配 | domain.test.ts、harness.test.ts | M5a 已补元数据检查占用；最终复核需直接断言等待占用全局名额与动态并发上限 |
 | A06 | 等待持有名额、失败暂停、其他列继续 | harness.test.ts、browser.spec.ts | M5b 已补失败部分回答与持久历史；完整 A06 待最终复核 |
 | A07 | 收束前不解锁、取消暂停、修改保留、不假报超时成功 | platform.test.ts、harness.test.ts、recovery.test.ts | 待完整进程边界复核 |
 | A08 | 切项目/刷新/关闭网页保持草稿历史和后台任务，重连不重跑 | browser.spec.ts、map.spec.ts、http-workspace.test.ts | 待最终复核 |
@@ -107,3 +107,20 @@ C01–C14 的追踪映射沿用规格第 11 节；I01 的依赖方向/公开入�
 真实外部模型应用验证尚待本机测试凭据路径。先前 probe 记录明确使用未持久化的临时凭据；本轮仅检查配置存在性，没有读取或输出秘密值，已通过异步问题请求本机配置路径，不要求在聊天中提供密钥。
 
 M5e 验证结果：`npm run check` 全部 65 项 Node 测试、架构/类型/格式检查通过；构建通过；完整 11 项浏览器测试通过。日志 `/tmp/parallel-pi-m5e-check.log`、`/tmp/parallel-pi-m5e-build.log`、`/tmp/parallel-pi-m5e-browser.log`；静态审计 `/tmp/parallel-pi-m5e-ui-audit.json`。本段独立提交，不替代尚未完成的真实模型及最终逐项/运行包验收。
+
+
+### M5f：结构化提问正文与刷新恢复
+
+逐项 UI 审查发现：RPC confirm 的 title/message 是两个字段，但此前适配器只投影标题；Conversation 的 prefill watch 没有 immediate，刷新页面时已挂起的 editor 题首次挂载不会执行初始化。实际浏览器回归先复现两项：确认区域只有“确认测试操作 否 是”，以及刷新后原生两行预填变为空字符串。原始证据 `/tmp/parallel-pi-m5f-red.log`。
+
+修复仅保留原生 message 并按纯文本显示、为编辑预填 watch 添加首次执行。沿用既有回复 API 和 run/question 身份，没有把回复转换成新消息或新 run。
+
+新增真实 pi 连续 select → confirm → editor 场景，浏览器以原生下拉框 Alt+Down/End/Enter 选择，确认正文刷新可见、布尔 false 原样送达，多行 editor 预填在初次显示与刷新后都保留。最终通知核对选择/布尔/多行内容，任务数始终为一个，结束后 question 清空。390px 下输入与回复按钮可操作。
+
+最终矩阵复核还发现两处证据需补强：现有地图测试覆盖切换与后台运行，但没有直接比较项目 DOM 顺序；现有等待测试覆盖原 run 回答，但标题中的容量结论还需直接断言多个等待 run 的全局名额和动态上限。这些是待补验收断言，当前不以测试标题代替通过结论。
+
+M5f 界面复核：已查看 `test-results/structured-question-narrow.png`，回复框与按钮可达、焦点可见、无横向溢出；确认正文按 Vue 文本插值渲染。UI strict audit 0 errors / 0 warnings；DESIGN lint 保留原有无 YAML 的 1 项提示，无错误。
+
+A11 的逐项审查补记：目前真实图片送达、预览及草稿附件保留已有断言；“移除图片”只检查了按钮存在，非视觉模型拒绝只有实现路径而无直接测试。最终验收须补实际移除操作及 text-only 模型在 prompt 前拒绝、保留附件引用的证据。
+
+M5f 验证结果：`npm run check` 全部 65 项 Node 测试和架构/类型/格式通过；构建通过；完整 12 项浏览器测试通过。日志 `/tmp/parallel-pi-m5f-check.log`、`/tmp/parallel-pi-m5f-build.log`、`/tmp/parallel-pi-m5f-browser.log`。本段独立提交；剩余具体断言、真实模型和最终运行包仍需完成。

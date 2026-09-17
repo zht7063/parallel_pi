@@ -65,7 +65,7 @@
 | --- | --- | --- | --- | --- |
 | Scrollbar | apps/web/src/style.css | DESIGN.md 运行时映射 | 全局默认 / forced-colors 系统颜色 | tests/browser.spec.ts computed style 与窄窗口 |
 | Form | apps/web/src/components/AppDialog.vue 与 Composer.vue | docs/mvp-spec.md §3/4/7 | 模态创建 / 会话输入 / 原 run 回复 | tests/browser.spec.ts |
-| Select/Listbox | Conversation.vue / App.vue 的原生 select | docs/mvp-spec.md §5；DESIGN.md | native，接受系统弹层外观 | tests/browser.spec.ts；选择型提问待 M5 补测 |
+| Select/Listbox | Conversation.vue / App.vue 的原生 select | docs/mvp-spec.md §5；DESIGN.md | native，接受系统弹层外观 | tests/browser.spec.ts；M5 已验证选择型提问的原生弹层键盘操作 |
 | CRUD | App.vue 与 workspace.ts | docs/mvp-spec.md §3 | 添加项目后进入地图；创建 session 后进入会话；首版不提供删除 | tests/browser.spec.ts |
 
 
@@ -104,3 +104,6 @@ Git 提交沿用 `GitChangesDialog.vue`：整文件复选框、提交消息、�
 
 
 仓库登记前检查若尚未证明收束，`App.vue` 在全局连接反馈下显示持久恢复提示，目录和原因来自公共快照 `repositoryRecovery`。复用 warning/global-error 样式与原添加项目 AppDialog，按钮只打开预填目录的表单，不自动执行检查。失败保留输入，Esc 回到原按钮；刷新不会隐藏未解决状态。后端仍先核验旧进程，核验成功后才重新检查仓库。本变体覆盖尚无项目/分支可承载错误的全局阻塞，证据见 `tests/browser.spec.ts`。
+
+
+结构化提问继续由 `Conversation.vue` 的 question 区域承载：原生 select 的键盘行为保持不变，确认题同时展示标题和正文，多行编辑恢复原生 prefill；所有回复仍绑定同一 run/question ID。刷新挂起提问不生成新 run，正文按纯文本显示。真实浏览器验证三类提问串行回复及刷新后的预填恢复，证据见 `tests/browser.spec.ts`。

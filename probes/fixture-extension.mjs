@@ -10,8 +10,15 @@ export default function (pi) {
     api: faux.api, baseUrl: faux.getModel().baseUrl, apiKey: 'local-fixture',
     models: faux.models, streamSimple: faux.provider.streamSimple,
   });
-  let askBeforeTool = false;
+  let askBeforeTool = false, structuredQuestions = false;
   pi.on('tool_call', async (event, ctx) => {
+    if (structuredQuestions && event.toolName === 'bash') {
+      structuredQuestions = false;
+      const choice = await ctx.ui.select('选择下一步', ['查看', '继续']);
+      const confirmed = await ctx.ui.confirm('确认测试操作', '只运行测试命令，保留已有文件。');
+      const edited = await ctx.ui.editor('编辑测试说明', '原生预填第一行\n原生预填第二行');
+      ctx.ui.notify(JSON.stringify({ choice, confirmed, edited }), 'info');
+    }
     if (askBeforeTool && event.toolName === 'bash') {
       askBeforeTool = false;
       await ctx.ui.input('Continue probe tool?');
@@ -19,7 +26,8 @@ export default function (pi) {
   });
   pi.on('before_agent_start', (event) => {
     askBeforeTool = event.prompt === 'probe-question-tool';
-    if (event.prompt === 'probe-tool' || askBeforeTool) {
+    structuredQuestions = event.prompt === 'probe-structured-questions';
+    if (event.prompt === 'probe-tool' || askBeforeTool || structuredQuestions) {
       faux.setResponses([
         fauxAssistantMessage(fauxToolCall('bash', { command: 'pwd; printf probe-tool-output' }), { stopReason: 'toolUse' }),
         fauxAssistantMessage('tool complete'),

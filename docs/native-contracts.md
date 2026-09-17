@@ -5,7 +5,7 @@
 | 依赖入口 | 固定基线 | 实际使用及边界 | 应用回归证据 |
 | --- | --- | --- | --- |
 | pi 构建入口 `packages/coding-agent/dist/rpc-entry.js` | commit `6671c604766b3670ed95f405aa7856835d0ca702` / 0.85.1 | 由 infra-pi 启动；构建路径不是稳定公共包导出。每 run 单独进程，`--offline --session` 指定原生文件 | `tests/engine.test.ts`、`tests/harness.test.ts` |
-| pi RPC 命令与事件 | 同上 | `get_state`、`get_available_models`、`set_model`、`get_entries`、`get_fork_messages`、`prompt`、`abort` 和 extension UI 请求/响应；JSON 形状仅在 infra-pi 内解释 | 文字/图片/工具/提问/精确模型拒绝/旧会话继续；`tests/engine.test.ts` |
+| pi RPC 命令与事件 | 同上 | `get_state`、`get_available_models`、`set_model`、`get_entries`、`get_fork_messages`、`prompt`、`abort` 和 extension UI 请求/响应；JSON 形状仅在 infra-pi 内解释 | 文字/图片/工具/提问/精确模型拒绝/旧会话继续；`tests/engine.test.ts`；`tests/browser.spec.ts` 验证 select/confirm 正文/editor 预填及刷新后回复仍归原 run |
 | pi SessionManager `dist/core/session-manager.js` | 同上 | infra-pi 的受监督 fork worker 使用 `open/getEntry/createBranchedSession/newSession/getHeader/getEntries`，分叉在选中用户消息之前；完整原生快照先写不可变回执，再无覆盖发布到目标文件。补齐原生无 assistant 时延迟落盘的边界；不执行扩展、工具或模型。应用层不接触原生 JSON | `tests/engine.test.ts` 首条/中间/图片分叉及源保护；`tests/harness.test.ts` 草稿、幂等、丢失确认恢复 |
 | pi 只读历史 `parseSessionEntries/SessionManager.inMemory/getEntries` | 同上 | infra-pi 在写进程收束后或静止启动时核验 v3 header 与目录，再用原生解析/索引生成历史；不调用会迁移写盘的 open/loadEntriesFromFile，不加载扩展或发送 prompt。失败/取消/中断同样刷新；读取失败保留缓存并要求恢复核对 | `tests/harness.test.ts` 失败/取消/旧缓存重建/分叉/坏文件恢复；`tests/recovery.test.ts` 后端 SIGKILL 后 HTTP 历史 |
 | pi `dist/core/auth-storage.js` / `dist/config.js` | 同上 | infra-pi 使用 `FileAuthStorageBackend.withLock` 与 `getAgentDir`；全局 settings/auth 编辑共享原生文件和锁。首次写入以 wx 创建，锁内核对进程级 HMAC 修订，保留未知字段；读取只取元数据，不解析或执行 key 命令；错误不回显文件正文 | `tests/configuration.test.ts`、`tests/settings.spec.ts` |

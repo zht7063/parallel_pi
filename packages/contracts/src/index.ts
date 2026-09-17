@@ -119,6 +119,7 @@ export interface WorkspaceSnapshot {
       id: string;
       kind: 'input' | 'editor' | 'select' | 'confirm';
       title: string;
+      message?: string;
       options?: string[];
       prefill?: string;
     } | null;

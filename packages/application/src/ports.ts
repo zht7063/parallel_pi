@@ -265,6 +265,7 @@ export interface EngineQuestion {
   id: string;
   kind: 'input' | 'editor' | 'select' | 'confirm';
   title: string;
+  message?: string;
   options?: string[];
   prefill?: string;
 }

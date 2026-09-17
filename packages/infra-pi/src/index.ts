@@ -171,6 +171,7 @@ class Rpc {
                 id: String(event.id),
                 kind: event.method,
                 title: String(event.title ?? event.message ?? 'pi question'),
+                ...(event.message !== undefined ? { message: String(event.message) } : {}),
                 ...(event.options ? { options: event.options.map(String) } : {}),
                 ...(event.prefill ? { prefill: String(event.prefill) } : {}),
               };

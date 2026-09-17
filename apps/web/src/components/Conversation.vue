@@ -231,6 +231,7 @@ watch(
   () => {
     answer.value = current.value?.question?.prefill ?? '';
   },
+  { immediate: true },
 );
 function scrolled() {
   if (restoringHistory) return;
@@ -436,8 +437,13 @@ function reply(value: string | boolean | null) {
           停止当前执行
         </button>
       </section>
-      <section v-if="current?.question && current.state === 'waiting_input'" class="question">
-        <h3>{{ current.question.title }}</h3>
+      <section
+        v-if="current?.question && current.state === 'waiting_input'"
+        class="question"
+        aria-labelledby="question-title"
+      >
+        <h3 id="question-title">{{ current.question.title }}</h3>
+        <p v-if="current.question.message" class="message-text">{{ current.question.message }}</p>
         <template v-if="current.question.kind === 'confirm'"
           ><button type="button" :disabled="busy" @click="reply(false)">否</button
           ><button type="button" class="primary" :disabled="busy" @click="reply(true)">

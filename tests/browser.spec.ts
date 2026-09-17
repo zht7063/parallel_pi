@@ -491,3 +491,96 @@ test('unresolved project inspection stays visible after reload and retries throu
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('native select, confirmation details and editor prefill survive browser reload on the same run', async ({
+  page,
+}) => {
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const { execFileSync } = await import('node:child_process');
+  const { createBackend } = await import('../apps/server/src/bootstrap.ts');
+  const root = mkdtempSync(join(tmpdir(), 'parallel-browser-questions-'));
+  const directory = join(root, 'repository');
+  mkdirSync(directory);
+  const git = (...args: string[]) =>
+    execFileSync('git', ['-C', directory, ...args], { stdio: 'pipe' });
+  git('init', '-b', 'main');
+  git('config', 'user.name', 'Test');
+  git('config', 'user.email', 'test@example.invalid');
+  writeFileSync(join(directory, 'code'), 'original');
+  git('add', '.');
+  git('commit', '-m', 'initial');
+  const backend = await createBackend({
+    dataDirectory: join(root, 'data'),
+    agentDirectory: join(root, 'agent'),
+    engineArgs: [
+      '--no-extensions',
+      '--no-skills',
+      '--no-prompt-templates',
+      '-e',
+      fileURLToPath(new URL('../probes/fixture-extension.mjs', import.meta.url)),
+    ],
+  });
+  try {
+    await backend.app.addProject(directory);
+    const lane = backend.app.snapshot().state.lanes[0]!;
+    await backend.app.createSession(lane.id, '结构化提问', {
+      provider: 'parallel-probe',
+      model: 'probe-a',
+    });
+    await new Promise<void>((resolve) => backend.server.listen(0, '127.0.0.1', resolve));
+    const address = backend.server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing address');
+    await page.goto(`http://127.0.0.1:${address.port}`);
+    await page.getByRole('button', { name: /结构化提问/ }).click();
+    await page.getByRole('button', { name: '进入会话', exact: true }).click();
+    await page.getByLabel('消息', { exact: true }).fill('probe-structured-questions');
+    await page.getByRole('button', { name: '发送', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '选择下一步' })).toBeVisible({ timeout: 15000 });
+    const runId = backend.app.snapshot().state.runs[0]!.id;
+    await page.reload();
+    const choice = page.getByRole('combobox', { name: '回答', exact: true });
+    await choice.focus();
+    await choice.press('Alt+ArrowDown');
+    await choice.press('End');
+    await choice.press('Enter');
+    await expect(choice).toHaveValue('继续');
+    await page.getByRole('button', { name: '回复当前任务' }).click();
+    await expect(page.getByRole('heading', { name: '确认测试操作' })).toBeVisible();
+    await expect.soft(page.locator('.question')).toContainText('只运行测试命令，保留已有文件。');
+    await page.reload();
+    await expect.soft(page.locator('.question')).toContainText('只运行测试命令，保留已有文件。');
+    await page.getByRole('button', { name: '否', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '编辑测试说明' })).toBeVisible();
+    await expect(page.getByLabel('回答', { exact: true })).toHaveValue(
+      '原生预填第一行\n原生预填第二行',
+    );
+    await page.reload();
+    await expect
+      .soft(page.getByLabel('回答', { exact: true }))
+      .toHaveValue('原生预填第一行\n原生预填第二行');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByLabel('回答', { exact: true }).fill('修改后的第一行\n修改后的第二行');
+    await page.getByRole('button', { name: '回复当前任务' }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: 'test-results/structured-question-narrow.png', fullPage: true });
+    await page.getByRole('button', { name: '回复当前任务' }).click();
+    await expect(page.locator('.run-row strong').first()).toHaveText('执行完成', {
+      timeout: 15000,
+    });
+    const runs = backend.app.snapshot().state.runs;
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.id).toBe(runId);
+    expect(runs[0]!.question).toBeNull();
+    await expect(page.getByRole('region', { name: '运行通知' })).toContainText(
+      '"choice":"继续","confirmed":false,"edited":"修改后的第一行\\n修改后的第二行"',
+    );
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  } finally {
+    await backend.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
