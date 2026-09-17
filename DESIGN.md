@@ -1,6 +1,6 @@
 # parallel_pi 设计方向
 
-状态：MVP v0.1 的三张静态 SVG 线框已获用户接受；应用骨架开始实施，完整地图与交互验收尚未完成。
+状态：MVP v0.1 的三张静态 SVG 线框已获用户接受；应用骨架开始实施，M2 真实执行界面已接入，完整地图与交互验收尚未完成。
 
 前端技术基线已确认：Vue 3 + TypeScript。分层与依赖规则见 [技术架构](docs/architecture.md)；地图组件库尚待实际需求验证，架构确认不表示线框视觉细节已冻结。
 
@@ -57,10 +57,20 @@
 | 基础交互状态 | 全局 button、focus-visible、disabled 样式；不在各页面重复定义 |
 | 连接反馈 | `App.vue` 的状态区域与持久错误；重试按钮忙碌时禁用 |
 
-当前骨架仅实现连接状态，其他控件的归属随实际能力补充。选择器采用原生 select，接受系统弹层外观；地图浮层按规格为非模态。模态表单将采用共享 dialog 组件，行为跟随规格。
+当前已实现项目/会话表单、地图与会话执行界面、草稿冲突和图片输入。选择器采用原生 select，接受系统弹层外观；地图浮层按规格为非模态。模态表单将采用共享 dialog 组件，行为跟随规格。
 
 ### Canonical UI Map
 
 | Capability | Canonical owner | Source of truth | Allowed variants | Verification |
 | --- | --- | --- | --- | --- |
 | Scrollbar | apps/web/src/style.css | DESIGN.md 运行时映射 | 全局默认 / forced-colors 系统颜色 | tests/browser.spec.ts computed style 与窄窗口 |
+| Form | apps/web/src/components/AppDialog.vue 与 Composer.vue | docs/mvp-spec.md §3/4/7 | 模态创建 / 会话输入 / 原 run 回复 | tests/browser.spec.ts |
+| Select/Listbox | Conversation.vue 的原生 select | docs/mvp-spec.md §5；DESIGN.md | native，接受系统弹层外观 | tests/browser.spec.ts；选择型提问待 M5 补测 |
+| CRUD | App.vue 与 workspace.ts | docs/mvp-spec.md §3 | 添加项目后进入地图；创建 session 后进入会话；首版不提供删除 | tests/browser.spec.ts |
+
+
+### 执行界面的新增语义 token
+
+运行时仍由 `apps/web/src/style.css` 统一拥有：warning-bg `#FFF5DC`、warning-text `#775015`、error-text `#A12835`、success-text `#27724E`。警告用于暂停/恢复/草稿冲突，错误用于保留输入的失败；均辅以文字。通用控件圆角 `--radius: 6px`。地图轨道沿用原主色，技术标识采用等宽字体。
+
+弹层由原生 dialog 提供模态焦点和 Esc，AppDialog 负责标题和关闭后焦点恢复；会话预览为非模态。按钮/字段/滚动条共享 style.css。状态反馈采用就地持久文本，不引入第二套 toast。消息与工具输出均按不可信纯文本呈现。草稿本地缓存是临时副本，只有修订保存确认后显示“草稿已保存”。

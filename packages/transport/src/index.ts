@@ -1,16 +1,26 @@
+import { body, command, projectSnapshot, subscribe } from './workspace.ts';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
-import type { Application } from '@parallel-pi/application';
+import type { Application, Harness, EngineEvent } from '@parallel-pi/application';
 import type { ServiceStatus } from '@parallel-pi/contracts';
 
-export function createHttpServer(application: Application, webRoot: string) {
+export function createHttpServer(application: Application, webRoot: string, workspace?: Harness) {
   // Restart rotates the local browser session. No token is placed in a URL or localStorage.
   const token = randomBytes(32).toString('hex');
   const server = createServer((request, response) => {
-    void handle(request, response);
+    void handle(request, response).catch((error) => {
+      if (response.headersSent) response.destroy();
+      else
+        json(response, 400, {
+          error: {
+            code: 'REQUEST',
+            message: error instanceof Error ? error.message : 'Request failed',
+          },
+        });
+    });
   });
   function json(response: ServerResponse, status: number, body: unknown) {
     response.writeHead(status, {
@@ -57,6 +67,52 @@ export function createHttpServer(application: Application, webRoot: string) {
         return json(response, 401, {
           error: { code: 'SESSION', message: 'Reconnect to the local application' },
         });
+      }
+      if (workspace) {
+        if (url.pathname === '/api/attachment' && request.method === 'GET') {
+          const image = workspace.attachment(url.searchParams.get('id') ?? '');
+          response.writeHead(200, {
+            'Content-Type': image.mimeType,
+            'Cache-Control': 'private, max-age=3600',
+          });
+          response.end(Buffer.from(image.data, 'base64'));
+          return;
+        }
+        if (url.pathname === '/api/activity' && request.method === 'GET') {
+          const runId = url.searchParams.get('runId');
+          if (!workspace.snapshot().state.runs.some((run) => run.id === runId))
+            throw new Error('Run not found');
+          const after = Number(url.searchParams.get('after') ?? 0);
+          const events = workspace.events(after);
+          const activity = events
+            .filter((item) => item.type === 'run.output')
+            .flatMap((item) => {
+              const data = item.data as { runId: string; event: EngineEvent };
+              if (data.runId !== runId) return [];
+              const event = data.event;
+              return [
+                {
+                  cursor: item.cursor,
+                  runId,
+                  kind: event.type,
+                  text: event.type === 'question' ? event.question.title : event.text,
+                  ...(event.type === 'tool' ? { phase: event.phase, name: event.name } : {}),
+                },
+              ];
+            });
+          return json(response, 200, {
+            cursor: events.at(-1)?.cursor ?? after,
+            activity,
+            more: events.length === 500,
+          });
+        }
+
+        if (url.pathname === '/api/snapshot' && request.method === 'GET')
+          return json(response, 200, projectSnapshot(workspace));
+        if (url.pathname === '/api/command' && request.method === 'POST')
+          return json(response, 200, await command(workspace, await body(request)));
+        if (url.pathname === '/api/events' && request.method === 'GET')
+          return subscribe(workspace, request, response, url);
       }
       if (url.pathname === '/api/status' && request.method === 'GET') {
         const status: ServiceStatus = {

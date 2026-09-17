@@ -6,6 +6,11 @@
   "exports": "./src/index.ts",
   "dependencies": {
     "@parallel-pi/application": "*",
-    "@parallel-pi/transport": "*"
+    "@parallel-pi/transport": "*",
+    "@parallel-pi/infra-storage": "*",
+    "@parallel-pi/infra-platform": "*",
+    "@parallel-pi/infra-pi": "*",
+    "@parallel-pi/infra-git": "*",
+    "@parallel-pi/infra-mwf": "*"
   }
 }
