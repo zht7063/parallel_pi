@@ -4,22 +4,22 @@
 
 | 条目 | 完整通过条件 | 现有证据入口 | M5 状态 / 待核对 |
 | --- | --- | --- | --- |
-| A01 | dirty 项目、另一分支 worktree，保留原修改且不搬运 | git.test.ts、harness.test.ts、browser.spec.ts | 待最终复核 |
-| A02 | 远端分支本地化、名称冲突不覆盖、不自动 merge | harness.test.ts 的 branch intentions、map.spec.ts | 待最终复核 |
-| A03 | 单/双击不漂移，浮层/返回恢复视口，不启动运行 | map.spec.ts | 待键盘与完整浏览器复核 |
-| A04 | 继续/接续/独立/fork、来源、图边、当前代码语义 | harness.test.ts、engine.test.ts、map.spec.ts | M5b 已验证失败/取消/重启历史及取消点分叉；来源与完整 A04 待最终复核 |
-| A05 | 同列互斥、跨列并行、默认并发 2 且可配 | domain.test.ts、harness.test.ts | M5a 已补元数据检查占用；最终复核需直接断言等待占用全局名额与动态并发上限 |
-| A06 | 等待持有名额、失败暂停、其他列继续 | harness.test.ts、browser.spec.ts | M5b 已补失败部分回答与持久历史；完整 A06 待最终复核 |
-| A07 | 收束前不解锁、取消暂停、修改保留、不假报超时成功 | platform.test.ts、harness.test.ts、recovery.test.ts | 待完整进程边界复核 |
-| A08 | 切项目/刷新/关闭网页保持草稿历史和后台任务，重连不重跑 | browser.spec.ts、map.spec.ts、http-workspace.test.ts | 待最终复核 |
-| A09 | 重启中断准确，残留收束后明确恢复，不重放 | recovery.test.ts、harness.test.ts、git-commit.test.ts | M5a/M5d 已补仓库检查及 pre/post-commit 真实后端 SIGKILL；完整恢复条目待最终汇总 |
-| A10 | 模型改变范围明确，排队选择冻结，无静默替换 | configuration.test.ts、project-settings.spec.ts、harness.test.ts | 待最终复核及真实外部模型应用调用 |
-| A11 | 图片可预览移除、真实送达、不支持时明确阻止 | browser.spec.ts、engine.test.ts、harness.test.ts | 待最终复核 |
-| A12 | 来源/scope、并发纠正、失败暂停、同请求重试或明确继续 | memory.test.ts、memory-agent.test.ts、memory.spec.ts、harness.test.ts | 待完整应用验收归档 |
-| A13 | dirty diff、明确范围提交、运行互斥、钩子失败、不 push/merge/扩大暂存 | git.test.ts、git-commit.test.ts、git-commit.spec.ts | M5d 已补后端强杀与浏览器 HTTP 确认丢失重试；完整 Git 条目待最终汇总 |
-| A14 | 项目顺序、切换不重排、草稿状态隔离 | map.spec.ts、browser.spec.ts | 待最终复核 |
-| A15 | 升级后的旧会话打开/继续/fork，MWF 召回/写入 | harness.test.ts 的 application upgrade、memory-agent.test.ts、memory.test.ts、原生契约表 | M5c 应用级固定样本通过；支持声明限于已验证的 0.84.1 → 0.85.1，最终回归仍须包含此项 |
-| A16 | 键盘替代双击、窄窗口、空/错/加载、错误可恢复、不虚报进度 | 全部浏览器 spec、DESIGN.md | M5e 已补未绑定检查恢复提示与窄窗口/键盘证据；待完整交互与最终截图复核 |
+| A01 | dirty 项目、另一分支 worktree，保留原修改且不搬运 | git.test.ts、harness.test.ts、browser.spec.ts | 已核实：原 dirty/untracked 保留，另一 worktree 仅含提交内容；真实双分支运行通过 |
+| A02 | 远端分支本地化、名称冲突不覆盖、不自动 merge | harness.test.ts 的 branch intentions、map.spec.ts | 已核实：选定远端新 tip/upstream、本地列、名称冲突与请求冲突；原 HEAD/dirty 不变 |
+| A03 | 单/双击不漂移，浮层/返回恢复视口，不启动运行 | map.spec.ts | 已核实：全局/浮层独立视口、预览/进入、Esc/键盘、窄窗口目标不漂移及导航不新增 run |
+| A04 | 继续/接续/独立/fork、来源、图边、当前代码语义 | harness.test.ts、engine.test.ts、map.spec.ts | 已核实：接续为空历史、独立根、原生 fork 边界/来源/图片草稿；同分支共用当前工作区而不回滚 |
+| A05 | 同列互斥、跨列并行、默认并发 2 且可配 | domain.test.ts、harness.test.ts | 已核实：同列互斥、跨列并行、目录别名互斥；M5g 直接验证默认 2 与动态上限 |
+| A06 | 等待持有名额、失败暂停、其他列继续 | harness.test.ts、browser.spec.ts | 已核实：M5g 两个等待占位，失败只暂停自身分支，另一分支继续 |
+| A07 | 收束前不解锁、取消暂停、修改保留、不假报超时成功 | platform.test.ts、harness.test.ts、recovery.test.ts | 已核实：双重脱离后代收束、缺少证明不解锁、PID 身份核对、取消暂停与 dirty 保留 |
+| A08 | 切项目/刷新/关闭网页保持草稿历史和后台任务，重连不重跑 | browser.spec.ts、map.spec.ts、http-workspace.test.ts | 已核实切项目/刷新/草稿/历史与 HTTP/SSE 去重；独立关闭网页再打开的直接浏览器场景待补 |
+| A09 | 重启中断准确，残留收束后明确恢复，不重放 | recovery.test.ts、harness.test.ts、git-commit.test.ts | 已核实：真实执行/仓库检查/pre/post-commit 后端 SIGKILL；未启动队列保留，明确恢复，不重放 |
+| A10 | 模型改变范围明确，排队选择冻结，无静默替换 | configuration.test.ts、project-settings.spec.ts、harness.test.ts | 已核实配置来源、冻结模型、未知字段/损坏原文/信任/凭据遮罩与不可用拒绝；真实外部模型应用调用仍待凭据 |
+| A11 | 图片可预览移除、真实送达、不支持时明确阻止 | browser.spec.ts、engine.test.ts、harness.test.ts | 已核实图片持久化/预览/实际移除/原生送达及 text-only 拒绝后显式换模重发；真实外部模型图片理解仍待验收 |
+| A12 | 来源/scope、并发纠正、失败暂停、同请求重试或明确继续 | memory.test.ts、memory-agent.test.ts、memory.spec.ts、harness.test.ts | 已核实原生来源/scope、修订冲突保留草稿、保存失败暂停、同请求重试和明确继续；原生 MCP 根目录边界通过 |
+| A13 | dirty diff、明确范围提交、运行互斥、钩子失败、不 push/merge/扩大暂存 | git.test.ts、git-commit.test.ts、git-commit.spec.ts | 已核实整文件原生提交、部分暂存拒绝、未选索引保留、过滤器实际树、钩子失败/越界与崩溃对账；丢失确认不重复提交 |
+| A14 | 项目顺序、切换不重排、草稿状态隔离 | map.spec.ts、browser.spec.ts | 已核实：M5g 完整 DOM 顺序不重排，新项目追加到底部；项目草稿与后台状态隔离 |
+| A15 | 升级后的旧会话打开/继续/fork，MWF 召回/写入 | harness.test.ts 的 application upgrade、memory-agent.test.ts、memory.test.ts、原生契约表 | 已核实固定 0.84.1 → 0.85.1 应用打开/继续/fork、已有 MWF 召回与新写入；67 项回归包含此场景，不泛化其他版本 |
+| A16 | 键盘替代双击、窄窗口、空/错/加载、错误可恢复、不虚报进度 | 全部浏览器 spec、DESIGN.md | 已核实完整 12 项浏览器基线及 M5g 受影响 6 项；键盘/390px/错误重试/提问刷新与恢复提示通过，不把执行完成宣称为任务完成 |
 
 C01–C14 的追踪映射沿用规格第 11 节；I01 的依赖方向/公开入口/循环检查继续作为必过检查。I02/I03 的恢复覆盖本轮 M5a 的新增问题；I04/I05/I06 与 A10/A12/A15 对齐；I07 需真实 UI 与内核贯通。固定版本、外部模型和确定性 provider 证据分开记录。
 
@@ -134,3 +134,13 @@ M5f 验证结果：`npm run check` 全部 65 项 Node 测试和架构/类型/格
 关系图浏览器测试保存完整项目列表，断言 alpha/beta 依次追加到底部；项目切换、刷新及历史分页后完整顺序不变。首次断言误以为共享后端只有本测试的两个项目而失败；改为保留已有项目并核对完整顺序，不修改产品行为。
 
 验证：完整 Node 套件 67 项通过（`/tmp/parallel-pi-m5g-node.log`）；受影响浏览器 6 项复验通过（`/tmp/parallel-pi-m5g-browser-recheck.log`），架构、类型与格式检查通过。真实外部模型应用调用、最终规格汇总和最终运行包仍未完成。
+
+### M5h：当前运行包复验与规格证据归档
+
+在干净提交 `8c30e6ecf023868ad36896da1062cb74a98ace99` 上执行 `npm run test:package`，1 项通过，181.86 秒，日志 `/tmp/parallel-pi-m5h-package.log`。测试实际制作候选归档、校验 SHA、移至独立临时目录解包，并从源码目录外启动。错误架构和静态文件篡改被拒绝；HTTP 本地校验、真实 pi 执行与持久消息、原生 MWF 初始化、SIGTERM 正常退出以及无 .git 的包内备份均通过。
+
+这次候选由测试的 `--development` 路径产生，结束时自动清理；它证明当前打包/运行流程，不是可交付的最终归档。最终干净提交的保留归档及 SHA256SUMS 仍需制作。当前前端产物对应 M5f 的成功构建（`index-FwQfmBe1.js` / `index-DSTQmPBo.css`）；此后只改变测试和证据，未修改产品源码。完整 12 项浏览器基线通过，M5g 另外重跑受影响 6 项；67 项 Node 与架构/类型/格式通过。
+
+本表已按实际断言汇总 A01–A16。I01 由架构检查支持；I02/I03 对应 A05–A09 及原生不可变回执；I04 对应 A10/A11；I05 对应 A12；I06 对应固定版本原生契约与 A15；I07 的真实 UI/内核/HTTP/存储/恢复由上述组合覆盖，但真实外部模型应用调用仍单独待验收。C01–C14 保持原规格追踪关系。
+
+尚未关闭：A08 独立关闭网页再打开的直接浏览器证据；真实外部模型应用文字/工具/图片/重启继续；最终保留运行归档与最终交付报告。macOS 实机验证按用户确认在 MVP 后进行，不将 Linux 或 Lima 配置校验冒充 macOS 实测。
