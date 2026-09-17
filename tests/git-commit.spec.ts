@@ -119,6 +119,41 @@ test('explicit whole-file commit retains failed input and restores real hook pro
     expect(readFileSync(join(directory, 'other'), 'utf8')).toBe('working other\n');
     expect(readFileSync(join(root, 'count'), 'utf8')).toBe('once\nonce\n');
     await expect(dialog.getByLabel('提交消息', { exact: true })).toHaveValue('');
+    // Deliver the real commit to the backend, then lose only its HTTP confirmation.
+    writeFileSync(join(directory, 'selected.txt'), 'confirmation lost content\n');
+    await dialog.getByRole('button', { name: '重新读取变更' }).click();
+    await dialog.getByRole('checkbox', { name: '提交 selected.txt', exact: true }).check();
+    await dialog.getByLabel('提交消息', { exact: true }).fill('Retry the same confirmed intent');
+    await dialog.getByRole('button', { name: '预览实际提交内容' }).click();
+    const requests: unknown[] = [];
+    await page.route('**/api/command', async (route) => {
+      const input = route.request().postDataJSON();
+      if (input.type !== 'git.commit') return route.continue();
+      requests.push(input);
+      if (requests.length !== 1) return route.continue();
+      const response = await route.fetch();
+      expect(response.ok()).toBe(true);
+      const result = await response.json();
+      expect(result.state).toBe('committed');
+      // Let the durable snapshot arrive while submit is still waiting for HTTP.
+      await expect(dialog.getByRole('region', { name: '最近提交结果' })).toContainText(
+        result.commit,
+      );
+      await route.abort('connectionreset');
+    });
+    await dialog.getByRole('button', { name: '确认创建本地提交' }).click();
+    await expect(dialog.getByRole('group', { name: '未确认的提交请求' })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: '重试同一提交请求' })).toBeEnabled();
+    expect(git('rev-list', '--count', 'HEAD')).toBe('3');
+    await dialog.getByRole('button', { name: '重试同一提交请求' }).click();
+    await expect(dialog.getByRole('group', { name: '未确认的提交请求' })).toHaveCount(0);
+    await expect(dialog.getByLabel('提交消息', { exact: true })).toHaveValue('');
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toEqual(requests[0]);
+    expect(git('rev-list', '--count', 'HEAD')).toBe('3');
+    expect(readFileSync(join(root, 'count'), 'utf8')).toBe('once\nonce\nonce\n');
+    expect(git('show', ':other')).toBe('staged other');
+    await page.unroute('**/api/command');
     const beforeReviewHead = git('rev-parse', 'HEAD'),
       beforeReviewIndex = readFileSync(join(directory, '.git/index'));
     writeFileSync(join(directory, 'selected.txt'), 'external review content\n');

@@ -260,3 +260,198 @@ test(
     assert.deepEqual(readFileSync(join(directory, '.git/index')), index);
   },
 );
+
+for (const hook of ['pre-commit', 'post-commit']) {
+  test(
+    `backend SIGKILL during ${hook} reconciles the original HTTP commit without replay`,
+    { timeout: 30000 },
+    async (t) => {
+      const root = mkdtempSync(join(tmpdir(), 'parallel-commit-crash-'));
+      const directory = join(root, 'repository');
+      mkdirSync(directory);
+      const git = (...args: string[]) =>
+        execFileSync('git', ['-C', directory, ...args], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }).trim();
+      git('init', '-b', 'main');
+      git('config', 'user.name', 'Test');
+      git('config', 'user.email', 'test@example.invalid');
+      writeFileSync(join(directory, 'selected'), 'original selected\n');
+      writeFileSync(join(directory, 'other'), 'original other\n');
+      git('add', '.');
+      git('commit', '-m', 'initial');
+      const originalHead = git('rev-parse', 'HEAD');
+      writeFileSync(join(directory, 'selected'), 'selected change\n');
+      writeFileSync(join(directory, 'other'), 'staged other\n');
+      git('add', '--', 'other');
+      writeFileSync(join(directory, 'other'), 'unstaged other\n');
+      const start = () =>
+        spawn(process.execPath, ['tests/backend-crash-worker.ts', root], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      let backend = start();
+      let stderr = '';
+      const capture = () =>
+        backend.stderr.on('data', (chunk) => {
+          stderr += String(chunk);
+        });
+      capture();
+      t.after(async () => {
+        if (backend.exitCode === null && backend.signalCode === null) {
+          const ended = once(backend, 'exit');
+          backend.kill('SIGTERM');
+          await ended;
+        }
+        rmSync(root, { recursive: true, force: true });
+      });
+      async function connect() {
+        await until(() => existsSync(join(root, 'url')), 'commit backend listening: ' + stderr);
+        const url = readFileSync(join(root, 'url'), 'utf8');
+        const response = await fetch(url + '/api/session');
+        return {
+          url,
+          headers: {
+            cookie: response.headers.get('set-cookie')!.split(';')[0]!,
+            'content-type': 'application/json',
+          },
+        };
+      }
+      let client = await connect();
+      async function command(input: unknown) {
+        const response = await fetch(client.url + '/api/command', {
+          method: 'POST',
+          headers: client.headers,
+          body: JSON.stringify(input),
+        });
+        const body = await response.json();
+        assert.equal(response.status, 200, JSON.stringify(body));
+        return body;
+      }
+      async function snapshot(): Promise<WorkspaceSnapshot> {
+        return (await fetch(client.url + '/api/snapshot', { headers: client.headers })).json();
+      }
+      await command({ type: 'project.add', directory });
+      const lane = (await snapshot()).lanes[0]!;
+      const session = await command({
+        type: 'session.create',
+        laneId: lane.id,
+        title: 'After interrupted commit',
+        model: { provider: 'parallel-probe', model: 'probe-a' },
+      });
+      writeFileSync(
+        join(directory, '.git/hooks', hook),
+        `#!/bin/sh
+printf 'once\n' >> '${join(root, 'hook-count')}'
+echo $$ > '${join(root, 'hook.pid')}'
+sleep 30 &
+echo $! > '${join(root, 'child.pid')}'
+wait
+printf unsafe > '${join(root, 'late-write')}'
+`,
+        { mode: 0o700 },
+      );
+      const view = await command({ type: 'git.inspect', laneId: lane.id });
+      const preview = await command({
+        type: 'git.preview-commit',
+        laneId: lane.id,
+        revision: view.revision,
+        paths: ['selected'],
+      });
+      const index = readFileSync(join(directory, '.git/index'));
+      const input = {
+        type: 'git.commit',
+        laneId: lane.id,
+        requestId: 'interrupted-http-commit',
+        revision: preview.revision,
+        tree: preview.tree,
+        paths: preview.paths,
+        message: 'Explicit selected commit',
+      };
+      const pending = fetch(client.url + '/api/command', {
+        method: 'POST',
+        headers: client.headers,
+        body: JSON.stringify(input),
+      }).then(
+        () => 'response',
+        () => 'disconnected',
+      );
+      await until(
+        () =>
+          existsSync(join(root, 'child.pid')) &&
+          readFileSync(join(root, 'child.pid'), 'utf8').trim().length > 0,
+        'native commit hook blocked',
+      );
+      await until(
+        async () => (await snapshot()).gitCommits[0]?.hook === hook,
+        'durable hook progress',
+      );
+      const job = (await snapshot()).gitCommits[0]!;
+      assert.equal(job.state, 'pending');
+      assert.equal(existsSync(join(directory, '.git/index.lock')), true);
+      const queued = await command({
+        type: 'run.enqueue',
+        requestId: 'after-interrupted-commit',
+        sessionId: session.id,
+        text: 'after explicit commit recovery',
+        attachmentIds: [],
+      });
+      assert.equal((await snapshot()).runs.find((item) => item.id === queued.id)?.state, 'queued');
+      const pids = ['hook.pid', 'child.pid'].map((file) =>
+        Number(readFileSync(join(root, file), 'utf8')),
+      );
+      const ended = once(backend, 'exit');
+      backend.kill('SIGKILL');
+      await ended;
+      assert.equal(await pending, 'disconnected', 'the original HTTP confirmation is lost');
+      unlinkSync(join(root, 'url'));
+      backend = start();
+      capture();
+      client = await connect();
+      const recovered = await snapshot();
+      const result = recovered.gitCommits.find((item) => item.id === job.id)!;
+      assert.equal(
+        result.state,
+        hook === 'pre-commit' ? 'failed' : 'committed',
+        result.error ?? '',
+      );
+      assert.equal(recovered.lanes[0]!.state, 'paused');
+      assert.equal(recovered.runs.find((item) => item.id === queued.id)?.state, 'queued');
+      for (const pid of pids) assert.throws(() => process.kill(pid, 0), /ESRCH/);
+      assert.equal(existsSync(join(root, 'late-write')), false);
+      assert.equal(existsSync(join(directory, '.git/index.lock')), false);
+      assert.equal(readFileSync(join(root, 'hook-count'), 'utf8'), 'once\n');
+      assert.equal(readFileSync(join(directory, 'selected'), 'utf8'), 'selected change\n');
+      assert.equal(readFileSync(join(directory, 'other'), 'utf8'), 'unstaged other\n');
+      assert.equal(git('show', ':other'), 'staged other');
+      if (hook === 'pre-commit') {
+        assert.equal(result.commit, null);
+        assert.equal(git('rev-parse', 'HEAD'), originalHead);
+        assert.deepEqual(readFileSync(join(directory, '.git/index')), index);
+      } else {
+        assert.equal(result.commit, git('rev-parse', 'HEAD'));
+        assert.match(result.error!, /post-commit was interrupted/);
+        assert.equal(git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'), 'selected');
+        assert.equal(git('show', 'HEAD:selected'), 'selected change');
+        assert.equal(git('diff', '--cached', '--name-only'), 'other');
+      }
+      assert.deepEqual(
+        await command(input),
+        result,
+        'retry retains the original request and outcome',
+      );
+      assert.deepEqual(await command({ type: 'git.reconcile', jobId: job.id }), result);
+      assert.equal((await snapshot()).gitCommits.length, 1);
+      assert.equal(readFileSync(join(root, 'hook-count'), 'utf8'), 'once\n');
+      assert.equal(git('rev-list', '--count', 'HEAD'), hook === 'pre-commit' ? '1' : '2');
+      await command({ type: 'lane.resume', laneId: lane.id });
+      await until(
+        async () =>
+          (await snapshot()).runs.find((item) => item.id === queued.id)?.state === 'succeeded',
+        'explicitly resumed queue',
+      );
+      assert.equal(readFileSync(join(root, 'hook-count'), 'utf8'), 'once\n');
+      assert.equal(git('show', ':other'), 'staged other');
+    },
+  );
+}

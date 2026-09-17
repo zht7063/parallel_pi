@@ -12,11 +12,11 @@
 | A06 | 等待持有名额、失败暂停、其他列继续 | harness.test.ts、browser.spec.ts | M5b 已补失败部分回答与持久历史；完整 A06 待最终复核 |
 | A07 | 收束前不解锁、取消暂停、修改保留、不假报超时成功 | platform.test.ts、harness.test.ts、recovery.test.ts | 待完整进程边界复核 |
 | A08 | 切项目/刷新/关闭网页保持草稿历史和后台任务，重连不重跑 | browser.spec.ts、map.spec.ts、http-workspace.test.ts | 待最终复核 |
-| A09 | 重启中断准确，残留收束后明确恢复，不重放 | recovery.test.ts、harness.test.ts、git-commit.test.ts | M5a 已补真实仓库检查 SIGKILL；Git 提交期间真实后端强杀组合仍待补强 |
+| A09 | 重启中断准确，残留收束后明确恢复，不重放 | recovery.test.ts、harness.test.ts、git-commit.test.ts | M5a/M5d 已补仓库检查及 pre/post-commit 真实后端 SIGKILL；完整恢复条目待最终汇总 |
 | A10 | 模型改变范围明确，排队选择冻结，无静默替换 | configuration.test.ts、project-settings.spec.ts、harness.test.ts | 待最终复核及真实外部模型应用调用 |
 | A11 | 图片可预览移除、真实送达、不支持时明确阻止 | browser.spec.ts、engine.test.ts、harness.test.ts | 待最终复核 |
 | A12 | 来源/scope、并发纠正、失败暂停、同请求重试或明确继续 | memory.test.ts、memory-agent.test.ts、memory.spec.ts、harness.test.ts | 待完整应用验收归档 |
-| A13 | dirty diff、明确范围提交、运行互斥、钩子失败、不 push/merge/扩大暂存 | git.test.ts、git-commit.test.ts、git-commit.spec.ts | 待与 A09 的提交故障组合、确认丢失边界复核 |
+| A13 | dirty diff、明确范围提交、运行互斥、钩子失败、不 push/merge/扩大暂存 | git.test.ts、git-commit.test.ts、git-commit.spec.ts | M5d 已补后端强杀与浏览器 HTTP 确认丢失重试；完整 Git 条目待最终汇总 |
 | A14 | 项目顺序、切换不重排、草稿状态隔离 | map.spec.ts、browser.spec.ts | 待最终复核 |
 | A15 | 升级后的旧会话打开/继续/fork，MWF 召回/写入 | harness.test.ts 的 application upgrade、memory-agent.test.ts、memory.test.ts、原生契约表 | M5c 应用级固定样本通过；支持声明限于已验证的 0.84.1 → 0.85.1，最终回归仍须包含此项 |
 | A16 | 键盘替代双击、窄窗口、空/错/加载、错误可恢复、不虚报进度 | 全部浏览器 spec、DESIGN.md | 待完整复核、未绑定检查在刷新后的恢复提示及最终截图审查 |
@@ -74,3 +74,21 @@ C01–C14 的追踪映射沿用规格第 11 节；I01 的依赖方向/公开入�
 补充契约命令：`node --test tests/memory.test.ts tests/memory-agent.test.ts probes/v01-upgrade.test.mjs`。现有原生 MCP 实际工具调用覆盖 agent bootstrap、召回、写入、worktree 根隔离和已有 adapter 复用；记忆修订契约覆盖原生锁、修订冲突、请求回执与失败重试。固定 MWF 版本未改变，本阶段不声称完成 MWF 跨版本迁移。
 
 验证结果：应用升级专项 1 项通过，原生/MWF 补充契约 4 项通过，类型与格式检查通过。日志 `/tmp/parallel-pi-m5c-upgrade.log`、`/tmp/parallel-pi-m5c-contracts.log`。本段仅新增测试与文档，生产实现沿用已完成完整回归的 M5b；未重复整个浏览器或打包测试。
+
+
+### M5d：真实后端提交强杀与确认丢失
+
+`tests/recovery.test.ts` 新增 pre-commit、post-commit 两个参数场景。通过真实 HTTP 预览与确认提交，钩子启动后持久快照显示对应 hook；此时接收同分支排队 run，强杀实际后端进程，使原 HTTP 请求断连，再以同一磁盘数据重启。
+
+明确验证：
+
+- 钩子及 sleep 子进程均消失，延迟写入未发生，应用持有的 index.lock 已处理。
+- pre-commit 中断未创建提交，原 HEAD 与原索引字节保留；post-commit 中断找回已创建的 commit ID，只包含所选文件，并保留 `post-commit was interrupted` 警告。
+- 未选文件的 staged/unstaged 两份内容都保留，所选文件工作区内容也保留。
+- 重启后队列仍 paused，原排队项仍 queued；相同 HTTP 意图重试和显式核对均返回原任务，不新增提交或重跑钩子。只有明确恢复队列后，原排队 run 才执行完成。
+
+`tests/git-commit.spec.ts` 另覆盖浏览器真实确认丢失：route.fetch 将确认送到实际后端，确认返回 committed、SSE 快照已展示 commit ID 后仅丢弃该 HTTP 响应。重试按钮可用后点击，比较两次完整请求完全一致，提交数只增加一次，钩子只执行一次，未选部分暂存保持原样。该场景与原有失败保留输入、钩子进度刷新及外部 Git 核对场景一起通过。
+
+最初浏览器测试在请求仍忙时就检查 HEAD，提前失败；改为等待同请求重试按钮 enabled 后再断言。这是测试同步修正，未改变生产实现。命令与日志：`node --test tests/recovery.test.ts`（`/tmp/parallel-pi-m5d-recovery.log`），`npx playwright test tests/git-commit.spec.ts`（`/tmp/parallel-pi-m5d-browser.log`）。
+
+验证结果：完整后端故障 4 项通过，扩展后的 Git 浏览器专项 1 项通过，类型/格式检查通过。本段仅新增回归和证据，最终 M5 仍需真实外部模型、完整规格/UI 复核和最终运行包验证。
