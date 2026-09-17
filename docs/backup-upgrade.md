@@ -47,7 +47,7 @@ tar -xzf /absolute/backups/parallel-pi-before-upgrade/files.tar.gz \
 
 1. 手动查看 pi/MWF 上游变更、许可证与接口差异，在独立升级分支或独立检出目录进行；不直接改变运行中应用的 vendor 或构建产物。
 2. 更新固定 gitlink、`probes/versions.json` 和实际受影响的锁文件/适配代码。检查 `docs/native-contracts.md` 的内部接口依赖，不以系统任意版本替换固定内核。
-3. 在隔离测试数据上构建候选版本，执行 `npm run check`、`npm run build`、`npm run test:browser`，并执行 `node --test probes/v01-upgrade.test.mjs` 验证旧原生样本。检查旧会话打开、继续、分叉，以及 MWF 召回/写入。探针本身不能替代 A15 的应用级验收；最终证据记录在 M5 验收矩阵。
+3. 在隔离测试数据上构建候选版本，执行 `npm run check`、`npm run build`、`npm run test:browser`，并执行 `node --test probes/v01-upgrade.test.mjs` 验证旧原生样本。应用旧会话测试可单独运行 `node --test --test-name-pattern="application upgrade opens" tests/harness.test.ts`，覆盖旧会话打开、继续、分叉及既有 MWF 的召回/写入；`tests/memory-agent.test.ts` 另验证实际原生 MCP 工具链。探针本身不能替代这些应用级验收；固定样本边界与结果见 M5 验收矩阵。
 4. 处理生产应用尚未启动的队列，不让它们在升级时悄悄换用另一内核。停止应用、等待进程收束，按上文创建并校验完整备份。
 5. 切换到已验证候选构建。若引入数据迁移，迁移须有独立测试和回退说明；当前 schema=1 的备份工具拒绝未知 schema，不擅自降级。
 6. 启动并检查恢复、旧会话、Git/MWF 与模型可用性，再开放任务。失败时先保存候选版已写入数据；仅在确认兼容时回退代码，否则按备份清单明确恢复数据，不能自动覆盖升级后新工作。

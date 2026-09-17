@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createHarness } from '@parallel-pi/application';
@@ -1553,5 +1553,162 @@ test(
     assert.match(last.text, /probe-failed-turn/);
     assert.match(last.text, /probe-slow-tool/);
     assert.match(last.text, /after cancellation/);
+  },
+);
+
+test(
+  'application upgrade opens, continues and forks a real pi 0.84.1 session with existing MWF',
+  { timeout: 45000 },
+  async (t) => {
+    const { root, directory, app, store, deps } = setup();
+    let current = app;
+    let currentStore = store;
+    t.after(async () => {
+      await current.close();
+      currentStore.close();
+      rmSync(root, { recursive: true, force: true });
+    });
+    await current.initialize();
+    await current.addProject(directory);
+    const lane = current.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/main')!;
+    const session = await current.createSession(lane.id, 'Existing old session', model);
+    assert.equal(
+      (
+        await current.changeMemory({
+          laneId: lane.id,
+          requestId: 'upgrade-memory-init',
+          change: { kind: 'init', gitMode: 'ignore' },
+        })
+      ).state,
+      'saved',
+    );
+    const content = {
+      type: 'knowledge' as const,
+      title: 'Upgrade contract',
+      summary: 'Existing memory survives kernel upgrade',
+      body: 'Keep the original worktree and history.',
+      candidate: false,
+      scope: { paths: ['code'] },
+    };
+    const beforeMemory = await current.saveMemory({
+      requestId: 'memory-before-upgrade',
+      sessionId: session.id,
+      content,
+    });
+    assert.equal(beforeMemory.state, 'saved');
+    const memoryBytes = readFileSync(join(directory, beforeMemory.receipt!.path));
+    await current.close();
+    currentStore.close();
+
+    const bytes = readFileSync(
+      new URL('../probes/fixtures/pi-0.84.1-session.jsonl', import.meta.url),
+    );
+    const meta = JSON.parse(
+      readFileSync(
+        new URL('../probes/fixtures/pi-0.84.1-session.meta.json', import.meta.url),
+        'utf8',
+      ),
+    );
+    assert.equal(meta.version, '0.84.1');
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), meta.sha256);
+    // Relocate only the real old kernel's header. Historical message bytes stay exact.
+    const newline = bytes.indexOf(10);
+    const header = JSON.parse(bytes.subarray(0, newline).toString());
+    const relocated = Buffer.concat([
+      Buffer.from(JSON.stringify({ ...header, cwd: directory }) + '\n'),
+      bytes.subarray(newline + 1),
+    ]);
+    const path = deps.engine.sessionPath(session.id);
+    writeFileSync(path, relocated);
+    currentStore = openStore(join(root, 'data'));
+    current = createHarness({ ...deps, store: currentStore });
+    await current.initialize();
+    const oldHistory = current.history(session.id).messages;
+    assert.deepEqual(
+      oldHistory.map((item) => item.text),
+      ['old-first', 'answer:old-first', 'old-fork-point', 'answer:old-fork-point'],
+    );
+    assert.deepEqual(readFileSync(path), relocated, 'opening history must not rewrite the old log');
+    assert.equal(current.snapshot().state.runs.length, 0, 'opening must not execute a prompt');
+    const recalled = await current.inspectMemory(lane.id, { query: { path: 'code' } });
+    assert.ok(recalled.records.some((item) => item.id === beforeMemory.receipt!.id));
+    assert.deepEqual(readFileSync(join(directory, beforeMemory.receipt!.path)), memoryBytes);
+
+    const continued = current.enqueue({
+      requestId: 'upgrade-continue',
+      sessionId: session.id,
+      text: 'continued after upgrade',
+      attachmentIds: [],
+    });
+    await until(
+      () => ['succeeded', 'failed', 'interrupted'].includes(state(current, continued.id).state),
+      'old session continuation',
+    );
+    assert.equal(
+      state(current, continued.id).state,
+      'succeeded',
+      state(current, continued.id).error ?? 'failed',
+    );
+    const afterHistory = current.history(session.id).messages;
+    assert.deepEqual(afterHistory.slice(0, oldHistory.length), oldHistory);
+    assert.match(afterHistory.at(-1)!.text, /old-first/);
+    assert.match(afterHistory.at(-1)!.text, /old-fork-point/);
+    assert.match(afterHistory.at(-1)!.text, /continued after upgrade/);
+    const sourceBytes = readFileSync(path);
+    const point = oldHistory.find((item) => item.text === 'old-fork-point')!;
+    const child = await current.forkSession(
+      session.id,
+      point.id,
+      'Old session fork',
+      'upgrade-fork',
+    );
+    assert.deepEqual(current.history(child.id).messages, oldHistory.slice(0, 2));
+    assert.equal(
+      current.snapshot().state.drafts.find((item) => item.sessionId === child.id)?.text,
+      'old-fork-point',
+    );
+    assert.deepEqual(child.origin, { kind: 'fork', sessionId: session.id, entryId: point.id });
+    const forkRun = current.enqueue({
+      requestId: 'upgrade-fork-run',
+      sessionId: child.id,
+      text: 'fork continued after upgrade',
+      attachmentIds: [],
+    });
+    await until(
+      () => ['succeeded', 'failed', 'interrupted'].includes(state(current, forkRun.id).state),
+      'old session fork continuation',
+    );
+    assert.equal(
+      state(current, forkRun.id).state,
+      'succeeded',
+      state(current, forkRun.id).error ?? 'failed',
+    );
+    const forkReply = current.history(child.id).messages.at(-1)!.text;
+    assert.match(forkReply, /old-first/);
+    assert.match(forkReply, /fork continued after upgrade/);
+    assert.doesNotMatch(forkReply, /old-fork-point/);
+    assert.deepEqual(
+      readFileSync(path),
+      sourceBytes,
+      'fork execution must not change its source log',
+    );
+
+    const afterMemory = await current.saveMemory({
+      requestId: 'memory-after-upgrade',
+      sessionId: child.id,
+      runId: forkRun.id,
+      content: { ...content, title: 'After upgrade', summary: 'New memory remains writable' },
+    });
+    assert.equal(afterMemory.state, 'saved');
+    const afterRecall = await current.inspectMemory(lane.id, { query: { path: 'code' } });
+    assert.deepEqual(
+      new Set(afterRecall.records.map((item) => item.id)),
+      new Set([beforeMemory.receipt!.id, afterMemory.receipt!.id]),
+    );
+    assert.match(
+      readFileSync(join(directory, afterMemory.receipt!.path), 'utf8'),
+      new RegExp(child.id),
+    );
+    assert.equal(readFileSync(join(directory, 'code'), 'utf8'), 'dirty');
   },
 );

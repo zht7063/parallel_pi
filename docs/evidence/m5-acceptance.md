@@ -18,7 +18,7 @@
 | A12 | 来源/scope、并发纠正、失败暂停、同请求重试或明确继续 | memory.test.ts、memory-agent.test.ts、memory.spec.ts、harness.test.ts | 待完整应用验收归档 |
 | A13 | dirty diff、明确范围提交、运行互斥、钩子失败、不 push/merge/扩大暂存 | git.test.ts、git-commit.test.ts、git-commit.spec.ts | 待与 A09 的提交故障组合、确认丢失边界复核 |
 | A14 | 项目顺序、切换不重排、草稿状态隔离 | map.spec.ts、browser.spec.ts | 待最终复核 |
-| A15 | 升级后的旧会话打开/继续/fork，MWF 召回/写入 | probes/v01-upgrade.test.mjs、原生契约表 | 必须补应用级旧会话升级验证，探针不替代 |
+| A15 | 升级后的旧会话打开/继续/fork，MWF 召回/写入 | harness.test.ts 的 application upgrade、memory-agent.test.ts、memory.test.ts、原生契约表 | M5c 应用级固定样本通过；支持声明限于已验证的 0.84.1 → 0.85.1，最终回归仍须包含此项 |
 | A16 | 键盘替代双击、窄窗口、空/错/加载、错误可恢复、不虚报进度 | 全部浏览器 spec、DESIGN.md | 待完整复核、未绑定检查在刷新后的恢复提示及最终截图审查 |
 
 C01–C14 的追踪映射沿用规格第 11 节；I01 的依赖方向/公开入口/循环检查继续作为必过检查。I02/I03 的恢复覆盖本轮 M5a 的新增问题；I04/I05/I06 与 A10/A12/A15 对齐；I07 需真实 UI 与内核贯通。固定版本、外部模型和确定性 provider 证据分开记录。
@@ -53,6 +53,24 @@ C01–C14 的追踪映射沿用规格第 11 节；I01 的依赖方向/公开入�
 
 专项 `failed and cancelled native turns survive restart, fork and explicit recovery` 覆盖真实模型错误的部分回答、真实 Bash 中途取消、旧空缓存重建、读取前后原生文件字节不变、从取消提问之前分叉（原问题进入草稿）、损坏 header 保留缓存、修复后继续时模型收到此前提问。真实 backend SIGKILL 测试新增 HTTP history 断言，证明重启后中断提问和工具调用可见且未重复。浏览器主闭环新增取消后刷新仍显示该提问、排队项仍未启动的断言。
 
-本项不扩大为任意旧 pi 版本或任意损坏文件修复承诺；原生解析沿用其对不完整/无法解析 JSONL 行的处理，应用不重写源文件。A15 的 0.84.1 旧会话应用兼容仍待独立验收。
+本项不扩大为任意旧 pi 版本或任意损坏文件修复承诺；原生解析沿用其对不完整/无法解析 JSONL 行的处理，应用不重写源文件。A15 的 0.84.1 旧会话应用兼容由后续 M5c 独立验收。
 
 验证结果：`npm run check` 62 项 Node 测试、架构、类型及格式检查全部通过；`npm run build` 通过；完整 10 项浏览器测试通过。日志 `/tmp/parallel-pi-m5b-check.log`、`/tmp/parallel-pi-m5b-build.log`、`/tmp/parallel-pi-m5b-browser.log`。本段独立提交，M5 全部条目的最终验收仍未结束。
+
+
+### M5c：应用旧会话升级与记忆契约
+
+命令：`node --test --test-name-pattern='application upgrade opens' tests/harness.test.ts`。测试使用真实 pi 0.84.1 SessionManager 生成的已归档样本，先核对原始 SHA-256，再仅调整 header 的 cwd 到隔离工作区；历史条目的原始字节保留。消息内容为合成样本，执行模型为受控 provider，不能作为真实外部模型证据，也不代表所有历史版本兼容。
+
+应用先创建真实项目、会话元数据和原生 MWF 记录，然后停机关闭 SQLite，把会话文件替换为上述旧格式样本，重开磁盘数据库并初始化当前 0.85.1 应用。此设置模拟持久应用引用旧原生日志；没有捏造历史 run，也不宣称运行了旧版 parallel-pi 应用。
+
+明确断言：
+
+- 应用 history 打开原来的四条消息，原生文件字节不变，无 run 被自动创建。
+- 明确继续后，真实当前 pi 收到旧的两条用户上下文及新提问；旧消息的 ID/内容/分叉属性保持一致。
+- 从旧的第二条提问分叉，只复制该提问之前的两条消息，提问进入子会话草稿，来源关联保存；子会话执行只收到原第一条提问和新的分叉输入，源文件保持不变。
+- 升级前的 MWF 记录按 code 路径仍可召回，文件字节不变；升级后从子会话及其 run 保存新记录成功，两条记录均可召回，新记录保留来源。原 dirty 工作文件保持原样。
+
+补充契约命令：`node --test tests/memory.test.ts tests/memory-agent.test.ts probes/v01-upgrade.test.mjs`。现有原生 MCP 实际工具调用覆盖 agent bootstrap、召回、写入、worktree 根隔离和已有 adapter 复用；记忆修订契约覆盖原生锁、修订冲突、请求回执与失败重试。固定 MWF 版本未改变，本阶段不声称完成 MWF 跨版本迁移。
+
+验证结果：应用升级专项 1 项通过，原生/MWF 补充契约 4 项通过，类型与格式检查通过。日志 `/tmp/parallel-pi-m5c-upgrade.log`、`/tmp/parallel-pi-m5c-contracts.log`。本段仅新增测试与文档，生产实现沿用已完成完整回归的 M5b；未重复整个浏览器或打包测试。
