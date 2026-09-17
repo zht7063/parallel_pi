@@ -13,6 +13,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   settings: [laneId: string];
+  memory: [laneId: string];
   remote: [branch: { ref: string; name: string }];
   enter: [id: string];
   create: [laneId: string, parentId?: string];
@@ -337,6 +338,9 @@ onBeforeUnmount(() => {
             </p>
             <button type="button" :disabled="busy || !connected" @click="emit('settings', lane.id)">
               工作区设置
+            </button>
+            <button type="button" :disabled="busy || !connected" @click="emit('memory', lane.id)">
+              工作区记忆
             </button>
             <div v-if="lane.state !== 'ready'" class="lane-warning">
               <p>{{ lane.reason }}</p>

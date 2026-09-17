@@ -8,7 +8,7 @@ import type {
 } from './ports.ts';
 
 export function memoryBlocked(state: ReturnType<AppStore['snapshot']>['state'], laneId: string) {
-  return state.memorySaves.some(
+  return [...state.memorySaves, ...state.memoryChanges].some(
     (job) => job.laneId === laneId && ['pending', 'failed'].includes(job.state),
   );
 }

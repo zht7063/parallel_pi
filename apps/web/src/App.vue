@@ -6,6 +6,7 @@ import AppDialog from './components/AppDialog.vue';
 import ModelPicker from './components/ModelPicker.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
 import ProjectSettingsDialog from './components/ProjectSettingsDialog.vue';
+import MemoryDialog from './components/MemoryDialog.vue';
 import Conversation from './components/Conversation.vue';
 import type { WorkspaceSnapshot, ProjectConfigurationSnapshot } from '@parallel-pi/contracts';
 import ProjectMap from './components/ProjectMap.vue';
@@ -52,7 +53,15 @@ const selectedProject = ref(''),
   activeSession = ref(''),
   preview = ref('');
 const dialog = ref<
-    'project' | 'session' | 'settings' | 'project-settings' | 'model' | 'branch' | 'fork' | null
+    | 'project'
+    | 'session'
+    | 'settings'
+    | 'project-settings'
+    | 'memory'
+    | 'model'
+    | 'branch'
+    | 'fork'
+    | null
   >(null),
   busy = ref(false),
   commandBusy = ref(false),
@@ -153,7 +162,15 @@ function back() {
   } catch {}
 }
 function open(
-  type: 'project' | 'session' | 'settings' | 'project-settings' | 'model' | 'branch' | 'fork',
+  type:
+    | 'project'
+    | 'session'
+    | 'settings'
+    | 'project-settings'
+    | 'memory'
+    | 'model'
+    | 'branch'
+    | 'fork',
   laneId = '',
   parentSessionId = '',
 ) {
@@ -458,6 +475,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', escapeMap));
               @command="command"
               @remote="openBranch"
               @settings="(laneId) => open('project-settings', laneId)"
+              @memory="(laneId) => open('memory', laneId)"
             />
           </section>
         </div>
@@ -496,11 +514,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', escapeMap));
           @command="command"
           @remote="openBranch"
           @settings="(laneId) => open('project-settings', laneId)"
+          @memory="(laneId) => open('memory', laneId)"
         />
       </section>
     </main>
+    <MemoryDialog
+      v-if="dialog === 'memory'"
+      :client="client"
+      :lane-id="form.laneId"
+      :jobs="data?.memoryChanges.filter((job) => job.laneId === form.laneId) ?? []"
+      @close="dialog = null"
+    />
     <ProjectSettingsDialog
-      v-if="dialog === 'project-settings'"
+      v-else-if="dialog === 'project-settings'"
       :client="client"
       :lane-id="form.laneId"
       :branch="data?.lanes.find((item) => item.id === form.laneId)?.ref ?? ''"

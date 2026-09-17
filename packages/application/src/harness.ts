@@ -1,5 +1,6 @@
 import { validateConfigurationRevision, validateDefaultModel } from './configuration.ts';
 import type { ConfigurationAccess } from './configuration.ts';
+import { createMemoryEditor } from './memory-editor.ts';
 import { createMemoryService, memoryBlocked } from './memory.ts';
 import { activeStates, concurrency, resolveModel, schedule, transition } from '@parallel-pi/domain';
 import type { ModelSelection, RunState } from '@parallel-pi/domain';
@@ -468,10 +469,15 @@ export function createHarness(deps: {
           continue;
         }
         try {
-          if (operation.kind === 'inspect-config') {
+          if (operation.kind === 'inspect-config' || operation.kind === 'inspect-memory') {
             store.transaction((tx) => {
               tx.state.operations.find((item) => item.id === operation.id)!.state = 'failed';
-              tx.emit('configuration.interrupted', { laneId });
+              tx.emit(
+                operation.kind === 'inspect-memory'
+                  ? 'memory.inspection-interrupted'
+                  : 'configuration.interrupted',
+                { laneId },
+              );
             });
             continue;
           }
@@ -505,6 +511,18 @@ export function createHarness(deps: {
           }
           if (operation.kind === 'fork-session') {
             finishFork(operation, await engine.reconcileFork(forkInput(operation)));
+            continue;
+          }
+          if (operation.kind === 'change-memory') {
+            store.transaction((tx) => {
+              tx.state.operations.find((item) => item.id === operation.id)!.state = 'failed';
+              const job = tx.state.memoryChanges.find(
+                (item) => item.id === operation.memoryChangeId,
+              )!;
+              job.state = 'failed';
+              job.error = '记忆修改结果未确认。重试会核对原事务回执，不会盲目覆盖记录。';
+              tx.emit('memory.change-reconciled', { changeId: job.id });
+            });
             continue;
           }
           if (operation.kind === 'save-memory') {
@@ -625,6 +643,7 @@ export function createHarness(deps: {
   });
   return {
     ...memoryService,
+    ...createMemoryEditor({ store, memory: deps.memory, supervisor, runtime, withLane, prepare }),
     async projectConfiguration(laneId: string) {
       if (!deps.configuration) throw new Error('Native configuration is unavailable');
       // Native trust hooks can execute code. Hold the lane until supervised cleanup.
@@ -708,8 +727,20 @@ export function createHarness(deps: {
           );
       }
       for (const branch of snapshot().state.lanes) {
-        if (branch.state !== 'recovering' && memoryBlocked(snapshot().state, branch.id))
+        if (branch.state !== 'recovering' && memoryBlocked(snapshot().state, branch.id)) {
+          // A crash can occur after accepting an intent but before registering
+          // its first process operation. Settled branches must expose a retry,
+          // not leave that intent permanently pending without a live owner.
+          store.transaction((tx) => {
+            for (const job of [...tx.state.memorySaves, ...tx.state.memoryChanges]) {
+              if (job.laneId !== branch.id || job.state !== 'pending') continue;
+              job.state = 'failed';
+              job.error = '后端重启时保存结果尚未确认。请明确重试原请求或暂不保存。';
+              tx.emit('memory.unconfirmed', { jobId: job.id });
+            }
+          });
           setLane(branch.id, 'paused', '长期记忆保存尚未完成。请重试或明确暂不保存。');
+        }
       }
       ready = true;
       pump();

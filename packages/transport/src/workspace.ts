@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Harness, MemoryInput } from '@parallel-pi/application';
+import type { Harness, MemoryInput, MemoryChange, MemoryQuery } from '@parallel-pi/application';
 import type { WorkspaceSnapshot, WorkspaceEvent } from '@parallel-pi/contracts';
 
 export function projectSnapshot(app: Harness): WorkspaceSnapshot {
@@ -14,6 +14,15 @@ export function projectSnapshot(app: Harness): WorkspaceSnapshot {
     cursor,
     concurrency: state.concurrency,
     drafts: state.drafts,
+    memoryChanges: state.memoryChanges.map((job) => ({
+      id: job.id,
+      laneId: job.laneId,
+      kind: job.change.kind,
+      recordId: job.change.kind === 'update' ? job.change.id : null,
+      summary: job.change.kind === 'update' ? job.change.summary : `初始化 ${job.change.gitMode}`,
+      state: job.state,
+      error: job.error,
+    })),
     memorySaves: state.memorySaves.map((job) => ({
       id: job.id,
       sessionId: job.sessionId,
@@ -239,6 +248,73 @@ export async function command(app: Harness, input: Record<string, unknown>): Pro
       });
       return { id: run.id, state: run.state };
     }
+    case 'memory.inspect': {
+      let query: MemoryQuery | undefined;
+      if (input.query !== undefined) {
+        const fields = object(input.query);
+        query = {};
+        for (const key of ['query', 'path'] as const)
+          if (fields[key] !== undefined) {
+            if (fields[key] === '') query[key] = '';
+            else query[key] = string(fields[key], 20000);
+          }
+        for (const key of ['file_type', 'component', 'tool', 'operation', 'phase'] as const)
+          if (fields[key] !== undefined) {
+            const items = fields[key];
+            if (!Array.isArray(items) || items.length > 100)
+              throw new Error('Invalid memory query');
+            query[key] = items.map((value) => string(value, 500));
+          }
+      }
+      if (
+        input.offset !== undefined &&
+        (!Number.isSafeInteger(input.offset) || Number(input.offset) < 0)
+      )
+        throw new Error('Invalid memory offset');
+      return app.inspectMemory(id(input.laneId), {
+        query,
+        recordId: input.recordId === undefined ? undefined : string(input.recordId, 128),
+        offset: input.offset as number | undefined,
+      });
+    }
+    case 'memory.change': {
+      const fields = object(input.change);
+      let change: MemoryChange;
+      if (fields.kind === 'init' && (fields.gitMode === 'track' || fields.gitMode === 'ignore'))
+        change = { kind: 'init', gitMode: fields.gitMode };
+      else if (fields.kind === 'update') {
+        const content = memoryContent({
+          ...fields,
+          type: 'knowledge',
+          title: 'Correction',
+          candidate: false,
+        });
+        const revision = string(fields.revision, 64);
+        if (!/^[a-f0-9]{64}$/.test(revision)) throw new Error('Invalid memory revision');
+        change = {
+          kind: 'update',
+          id: string(fields.id, 128),
+          revision,
+          status: string(fields.status, 64),
+          summary: content.summary,
+          body: content.body,
+          scope: content.scope,
+        };
+      } else throw new Error('Invalid memory change');
+      const job = await app.changeMemory({
+        laneId: id(input.laneId),
+        requestId: id(input.requestId),
+        change,
+      });
+      return { id: job.id, state: job.state, error: job.error };
+    }
+    case 'memory.change.retry': {
+      const job = await app.retryMemoryChange(id(input.changeId));
+      return { id: job.id, state: job.state, error: job.error };
+    }
+    case 'memory.change.continue':
+      await app.continueWithoutMemoryChange(id(input.changeId));
+      return {};
     case 'memory.save': {
       const job = await app.saveMemory({
         requestId: id(input.requestId),

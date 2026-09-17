@@ -16,6 +16,15 @@ export interface WorkspaceSnapshot {
   cursor: number;
   drafts: { sessionId: string; revision: number; text: string; attachmentIds: string[] }[];
   concurrency: number;
+  memoryChanges: {
+    id: string;
+    laneId: string;
+    kind: 'init' | 'update';
+    recordId: string | null;
+    summary: string;
+    state: 'pending' | 'saved' | 'failed' | 'continued';
+    error: string | null;
+  }[];
   memorySaves: {
     id: string;
     sessionId: string;
@@ -154,4 +163,38 @@ export interface ConnectionsSnapshot {
     hasInlineCredential: boolean;
     models: { id: string; images: boolean }[];
   }[];
+}
+
+export interface MemoryQuery {
+  query?: string;
+  path?: string;
+  file_type?: string[];
+  component?: string[];
+  tool?: string[];
+  operation?: string[];
+  phase?: string[];
+}
+export interface MemoryRecordView {
+  id: string;
+  type: 'preference' | 'decision' | 'knowledge' | 'incident' | 'task';
+  status: string;
+  title: string;
+  summary: string;
+  scope: Partial<
+    Record<
+      'paths' | 'file_types' | 'components' | 'tools' | 'operations' | 'phases' | 'keywords',
+      string[]
+    >
+  >;
+  path: string;
+  revision: string;
+  statuses: string[];
+  reasons: string[];
+}
+export interface MemorySnapshot {
+  initialized: boolean;
+  gitMode: 'track' | 'ignore' | null;
+  records: MemoryRecordView[];
+  total: number;
+  record: (MemoryRecordView & { body: string; boundaries: Record<string, string> }) | null;
 }

@@ -27,3 +27,11 @@
 ### 原生自定义连接编辑（M4b）
 
 `infra-pi` 额外允许固定版 `core/model-config.js` 与 `utils/json.js`：使用 `ModelConfig.load/getProviderIds/getProvider/getError` 校验不可变配置快照，使用原生 `stripJsonComments` 处理 JSONC。应用输入只修改已声明连接字段；原文 HMAC 在 native 文件锁内复核，保留其他配置，错误不透传原生解析片段。校验不创建 ModelRuntime、不解析凭据命令；读取目录仍沿用已有独立监督 worker。临时私有校验快照与强杀遗留限制见 `evidence/m4-connections.md`。升级时重跑连接文件与浏览器契约测试。
+
+### MWF 查看与带修订号的纠正（M4c）
+
+`infra-mwf/src/worker.mjs` 在独立监督进程内使用固定 MWF `core.js` 的 `config/operate/schemas`、`storage.js` 的 `canonicalRoot/hash/recover/Transaction/withProjectLock/MWFError` 及 `protocol.js` 的 `validRecords/TYPES/boundaries/requireSafe`。应用不复制 MWF 的状态转换、索引或记录渲染逻辑。原生候选可被 recall 返回，界面保留 candidate 状态与未确认提示；失效状态遵循原生 active 规则。
+
+原生 update 的公开 CLI 没有比较修订号后再写入的接口。本适配在相同项目锁内比较原记录 hash，再调用原生 update，将结果回执写入 `.mwf/local/parallel-pi/<request-id>.json`，与记录和索引共用同一可恢复文件事务。重试先验证请求指纹/回执，不因旧修订号再次覆盖当前记录。初始化同样保存回执，并保留已存在的 git_mode。受监督子进程收束后才释放分支维护占用；SQLite 仅保存待写意图与结果，不作为记忆正文的第二份权威来源。
+
+查看每页 20 条，召回沿用原生最多 100 条限制；worker 仍扫描原生文件，不建独立索引。读取未初始化工作区不创建 .mwf。应用内自动 agent bootstrap/MCP 接入在后续阶段完成，本段仅证明 UI 与命令 API 的原生召回和纠正。

@@ -322,11 +322,13 @@ test(
       app.saveMemory({ ...input, content: { ...input.content, summary: 'changed' } }),
       /conflicts/,
     );
-    // Explicit native initialization only in this disposable test repository.
-    const cli = fileURLToPath(
-      new URL('../probes/.cache/mwf-source/packages/mwf/dist/cli.js', import.meta.url),
-    );
-    execFileSync(process.execPath, [cli, 'init', '--root', directory, '--git-mode', 'ignore']);
+    // Initialization must remain available to repair a failed save to an uninitialized workspace.
+    const initialized = await app.changeMemory({
+      laneId: lane.id,
+      requestId: 'repair-missing-memory',
+      change: { kind: 'init', gitMode: 'ignore' },
+    });
+    assert.equal(initialized.state, 'saved');
     const saved = await app.retryMemory(failed.id);
     assert.equal(saved.state, 'saved');
     assert.equal(saved.receipt!.replayed, false);
@@ -892,5 +894,164 @@ test(
     await recovering;
     await closing;
     assert.equal(closed, true);
+  },
+);
+
+test(
+  'memory corrections persist intent, pause failures and reconcile committed native transactions after restart',
+  { timeout: 30000 },
+  async (t) => {
+    const { root, directory, app, store, deps } = setup();
+    let current = app;
+    t.after(async () => {
+      await current.close();
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    });
+    await app.initialize();
+    await app.addProject(directory);
+    const lane = app.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/main')!;
+    assert.equal((await app.inspectMemory(lane.id)).initialized, false);
+    const init = await app.changeMemory({
+      laneId: lane.id,
+      requestId: 'initialize-memory',
+      change: { kind: 'init', gitMode: 'track' },
+    });
+    assert.equal(init.state, 'saved');
+    assert.equal(
+      (
+        await app.changeMemory({
+          laneId: lane.id,
+          requestId: 'initialize-memory',
+          change: { kind: 'init', gitMode: 'track' },
+        })
+      ).id,
+      init.id,
+    );
+    const session = await app.createSession(lane.id, 'Memory corrections', model);
+    const saved = await app.saveMemory({
+      requestId: 'source-record',
+      sessionId: session.id,
+      content: {
+        type: 'decision',
+        title: 'Architecture decision',
+        summary: 'Initial decision',
+        body: 'Observed evidence',
+        scope: {},
+        candidate: false,
+      },
+    });
+    const recordId = saved.receipt!.id;
+    const view = await app.inspectMemory(lane.id, { recordId });
+    const input = {
+      laneId: lane.id,
+      requestId: 'correct-record',
+      change: {
+        kind: 'update' as const,
+        id: recordId,
+        revision: view.record!.revision,
+        status: 'superseded',
+        summary: 'Replaced decision',
+        body: 'Replaced after new evidence. Source: original session.',
+        scope: { paths: ['code'] },
+      },
+    };
+    const job = await app.changeMemory(input);
+    assert.equal(job.state, 'saved');
+    const recordPath = join(directory, job.receipt!.path!);
+    const bytes = readFileSync(recordPath, 'utf8');
+    await app.close();
+    store.transaction((tx) => {
+      tx.state.operations.find((item) => item.memoryChangeId === job.id)!.state = 'pending';
+      const pending = tx.state.memoryChanges.find((item) => item.id === job.id)!;
+      pending.state = 'pending';
+      pending.receipt = null;
+      // Accepted intent before the first child operation exists: no live owner.
+      tx.state.memoryChanges.push({
+        ...job,
+        id: 'unstarted-change',
+        requestId: 'unstarted-change-request',
+        state: 'pending',
+        receipt: null,
+      });
+      tx.state.memorySaves.push({
+        ...saved,
+        id: 'unstarted-add',
+        requestId: 'unstarted-add-request',
+        state: 'pending',
+        receipt: null,
+      });
+    });
+    current = createHarness(deps);
+    await current.initialize();
+    assert.equal(
+      current.snapshot().state.memoryChanges.find((item) => item.id === job.id)!.state,
+      'failed',
+    );
+    assert.equal(
+      current.snapshot().state.lanes.find((item) => item.id === lane.id)!.state,
+      'paused',
+    );
+    await assert.rejects(current.resume(lane.id), /pending memory/);
+    assert.equal(
+      current.snapshot().state.memoryChanges.find((item) => item.id === 'unstarted-change')!.state,
+      'failed',
+    );
+    assert.equal(
+      current.snapshot().state.memorySaves.find((item) => item.id === 'unstarted-add')!.state,
+      'failed',
+    );
+    assert.equal(
+      current
+        .snapshot()
+        .state.operations.some(
+          (item) =>
+            item.memoryChangeId === 'unstarted-change' || item.memorySaveId === 'unstarted-add',
+        ),
+      false,
+      'startup does not replay orphaned intents',
+    );
+    await current.continueWithoutMemoryChange('unstarted-change');
+    await current.continueWithoutMemory('unstarted-add');
+    const replayed = await current.retryMemoryChange(job.id);
+    assert.equal(replayed.state, 'saved');
+    assert.equal(replayed.receipt!.replayed, true);
+    assert.equal(readFileSync(recordPath, 'utf8'), bytes);
+    assert.equal(current.snapshot().state.runs.length, 0);
+    const conflict = await current.changeMemory({ ...input, requestId: 'outdated-change' });
+    assert.equal(conflict.state, 'failed');
+    assert.match(conflict.error!, /changed; reload/);
+    await assert.rejects(current.resume(lane.id), /pending memory/);
+    await assert.rejects(
+      current.changeMemory({ ...input, requestId: 'another-outdated-change' }),
+      /pending memory/,
+    );
+    await current.continueWithoutMemoryChange(conflict.id);
+    await current.resume(lane.id);
+    assert.equal((await current.inspectMemory(lane.id, { query: { path: 'code' } })).total, 0);
+    const inspect = deps.memory.inspect;
+    let release!: () => void;
+    const wait = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    deps.memory.inspect = async (request) => {
+      await wait;
+      return inspect(request);
+    };
+    const reading = current.inspectMemory(lane.id);
+    await until(
+      () =>
+        current
+          .snapshot()
+          .state.operations.some(
+            (item) => item.kind === 'inspect-memory' && item.state === 'pending',
+          ),
+      'memory inspection owns branch',
+    );
+    await assert.rejects(current.createSession(lane.id, 'Must wait', model), /occupied/);
+    release();
+    await reading;
+    deps.memory.inspect = inspect;
+    assert.equal(readFileSync(join(directory, 'code'), 'utf8'), 'dirty');
   },
 );

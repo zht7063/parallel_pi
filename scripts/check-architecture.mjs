@@ -117,7 +117,13 @@ export function checkArchitecture(root) {
             ].some(
               (entry) => target === resolve(root, 'vendor/pi/packages/coding-agent/dist', entry),
             );
-          if (!nativeAdapterEntry && !target.startsWith(sourceRoot + sep))
+          const nativeMemoryEntry =
+            owner.name === 'infra-mwf' &&
+            ['core.js', 'storage.js', 'protocol.js'].some(
+              (entry) =>
+                target === resolve(root, 'probes/.cache/mwf-source/packages/mwf/dist', entry),
+            );
+          if (!nativeAdapterEntry && !nativeMemoryEntry && !target.startsWith(sourceRoot + sep))
             errors.push(`${label}: relative import escapes package source: ${name}`);
           if (!existsSync(target)) errors.push(`${label}: unresolved import ${name}`);
           edges.push(target);

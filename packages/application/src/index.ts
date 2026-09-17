@@ -55,3 +55,12 @@ export type {
   ConfigurationView,
   ProjectConfigurationView,
 } from './configuration.ts';
+
+export type {
+  MemoryChangeJob,
+  MemoryQuery,
+  MemoryRecordView,
+  MemoryView,
+  MemoryChange,
+  MemoryChangeReceipt,
+} from './ports.ts';

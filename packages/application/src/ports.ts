@@ -31,8 +31,11 @@ export interface Operation {
     | 'create-branch'
     | 'fetch-remotes'
     | 'fork-session'
-    | 'inspect-config';
+    | 'inspect-config'
+    | 'inspect-memory'
+    | 'change-memory';
   memorySaveId?: string;
+  memoryChangeId?: string;
   requestId?: string;
   fingerprint?: string;
   expectedHead?: string;
@@ -53,6 +56,7 @@ export interface AppState {
   concurrency: number;
   drafts: Draft[];
   memorySaves: MemorySave[];
+  memoryChanges: MemoryChangeJob[];
 }
 export interface AppEvent {
   cursor: number;
@@ -302,7 +306,67 @@ export interface MemoryReceipt {
   status: string;
   replayed: boolean;
 }
+export interface MemoryQuery {
+  query?: string;
+  path?: string;
+  file_type?: string[];
+  component?: string[];
+  tool?: string[];
+  operation?: string[];
+  phase?: string[];
+}
+export interface MemoryRecordView {
+  id: string;
+  type: MemoryInput['type'];
+  status: string;
+  title: string;
+  summary: string;
+  scope: MemoryInput['scope'];
+  path: string;
+  revision: string;
+  statuses: string[];
+  reasons: string[];
+}
+export interface MemoryView {
+  initialized: boolean;
+  gitMode: 'track' | 'ignore' | null;
+  records: MemoryRecordView[];
+  total: number;
+  record: (MemoryRecordView & { body: string; boundaries: Record<string, string> }) | null;
+}
+export type MemoryChange =
+  | { kind: 'init'; gitMode: 'track' | 'ignore' }
+  | {
+      kind: 'update';
+      id: string;
+      revision: string;
+      status: string;
+      summary: string;
+      body: string;
+      scope: MemoryInput['scope'];
+    };
+export interface MemoryChangeReceipt {
+  kind: 'init' | 'update';
+  gitMode?: 'track' | 'ignore';
+  id?: string;
+  path?: string;
+  revision?: string;
+  replayed: boolean;
+}
 export interface MemoryAccess {
+  inspect(input: {
+    directory: string;
+    operationId: string;
+    query?: MemoryQuery;
+    recordId?: string;
+    offset?: number;
+  }): Promise<MemoryView>;
+  modify(input: {
+    directory: string;
+    operationId: string;
+    requestId: string;
+    change: MemoryChange;
+  }): Promise<MemoryChangeReceipt>;
   add(input: {
     directory: string;
     operationId: string;
@@ -322,5 +386,17 @@ export interface MemorySave {
   state: 'pending' | 'saved' | 'failed' | 'continued';
   error: string | null;
   receipt: MemoryReceipt | null;
+  createdAt: number;
+}
+
+export interface MemoryChangeJob {
+  id: string;
+  requestId: string;
+  laneId: string;
+  directory: string;
+  change: MemoryChange;
+  state: 'pending' | 'saved' | 'failed' | 'continued';
+  error: string | null;
+  receipt: MemoryChangeReceipt | null;
   createdAt: number;
 }
