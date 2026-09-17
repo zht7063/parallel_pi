@@ -424,6 +424,30 @@ onBeforeUnmount(() => window.removeEventListener('keydown', escapeMap));
       <div v-if="client.error.value" class="error global-error" role="alert">
         {{ client.error.value }}
       </div>
+      <section
+        v-if="data?.repositoryRecovery.length"
+        class="warning global-error"
+        aria-labelledby="repository-recovery-title"
+      >
+        <h2 id="repository-recovery-title">仓库检查需要核对</h2>
+        <p role="alert">
+          尚未确认上次检查已停止，新操作和排队任务暂缓。请重试添加项目，核对完成后再继续。
+        </p>
+        <div v-for="item in data.repositoryRecovery" :key="item.id">
+          <p class="mono message-text">{{ item.directory }}</p>
+          <p v-if="item.reason" class="message-text">{{ item.reason }}</p>
+          <button
+            type="button"
+            :disabled="busy || client.connection.value !== 'connected'"
+            @click="
+              open('project');
+              form.directory = item.directory;
+            "
+          >
+            重试添加此项目
+          </button>
+        </div>
+      </section>
       <section v-if="session && sessionLane && data && project" class="focus-workspace">
         <nav class="map-navigation" aria-label="会话地图导航">
           <MapThumbnail

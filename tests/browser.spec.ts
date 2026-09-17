@@ -406,3 +406,88 @@ test('handoff storage failure keeps execution success visible and retries withou
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('unresolved project inspection stays visible after reload and retries through the existing project form', async ({
+  page,
+}) => {
+  const { mkdtempSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, rmSync } =
+    await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { execFileSync } = await import('node:child_process');
+  const { openStore } = await import('@parallel-pi/infra-storage');
+  const { createSupervisor } = await import('@parallel-pi/infra-platform');
+  const { createBackend } = await import('../apps/server/src/bootstrap.ts');
+  const root = mkdtempSync(join(tmpdir(), 'parallel-browser-inspection-'));
+  const directory = join(root, '需要核对的仓库-with-a-long-directory-name');
+  mkdirSync(directory);
+  const git = (...args: string[]) =>
+    execFileSync('git', ['-C', directory, ...args], { stdio: 'pipe' });
+  git('init', '-b', 'main');
+  git('config', 'user.name', 'Test');
+  git('config', 'user.email', 'test@example.invalid');
+  writeFileSync(join(directory, 'code'), 'original');
+  git('add', '.');
+  git('commit', '-m', 'initial');
+  const dataDirectory = join(root, 'data');
+  const operationId = 'lost-inspection-proof';
+  const supervisor = createSupervisor(join(dataDirectory, 'supervision'));
+  const child = supervisor.start({ id: operationId, directory, command: 'true', args: [] });
+  expect((await child.completion).settled).toBe(true);
+  const resultPath = join(dataDirectory, 'supervision', operationId, 'result.json');
+  const proof = readFileSync(resultPath);
+  unlinkSync(resultPath); // A stopped owner without its cleanup proof must remain uncertain.
+  const store = openStore(dataDirectory);
+  store.transaction((tx) =>
+    tx.state.operations.push({
+      id: operationId,
+      laneId: null,
+      kind: 'inspect-repository',
+      target: directory,
+      state: 'pending',
+      error: null,
+      createdAt: Date.now(),
+    }),
+  );
+  store.close();
+  const backend = await createBackend({ dataDirectory, agentDirectory: join(root, 'agent') });
+  try {
+    await new Promise<void>((resolve) => backend.server.listen(0, '127.0.0.1', resolve));
+    const address = backend.server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing address');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`http://127.0.0.1:${address.port}`);
+    const banner = page.getByRole('region', { name: '仓库检查需要核对' });
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText(directory);
+    expect(backend.app.snapshot().state.projects).toHaveLength(0);
+    await page.reload();
+    await expect(banner).toBeVisible();
+    const retry = banner.getByRole('button', { name: '重试添加此项目' });
+    await retry.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByLabel('Git 项目目录')).toHaveValue(directory);
+    await page.getByRole('button', { name: '添加项目', exact: true }).click();
+    await expect(page.locator('#form-error')).toContainText('重试添加项目');
+    await expect(page.getByLabel('Git 项目目录')).toHaveValue(directory);
+    expect(backend.app.snapshot().state.projects).toHaveLength(0);
+    await page.keyboard.press('Escape');
+    await expect(retry).toBeFocused();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: 'test-results/unbound-recovery-narrow.png', fullPage: true });
+    writeFileSync(resultPath, proof); // Restore the actual proof produced above, not a fabricated success.
+    await retry.press('Enter');
+    await page.getByRole('button', { name: '添加项目', exact: true }).click();
+    await expect(banner).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'main', exact: true })).toBeVisible();
+    expect(backend.app.snapshot().state.projects).toHaveLength(1);
+    expect(
+      backend.app.snapshot().state.operations.find((item) => item.id === operationId)?.state,
+    ).toBe('failed');
+  } finally {
+    await backend.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

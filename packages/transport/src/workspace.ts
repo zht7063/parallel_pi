@@ -32,6 +32,12 @@ export function projectSnapshot(app: Harness): WorkspaceSnapshot {
       Math.max(lastActivity.get(run.sessionId) ?? 0, run.createdAt, run.endedAt ?? 0),
     );
   return {
+    repositoryRecovery: state.operations
+      .filter(
+        (item) =>
+          item.laneId === null && item.state === 'uncertain' && item.kind === 'inspect-repository',
+      )
+      .map((item) => ({ id: item.id, directory: item.target, reason: item.error })),
     gitCommits: state.gitCommits.map(projectGitCommit),
     cursor,
     concurrency: state.concurrency,

@@ -33,6 +33,7 @@ export interface GitCommitPreview {
   diff: string;
 }
 export interface WorkspaceSnapshot {
+  repositoryRecovery: { id: string; directory: string; reason: string | null }[];
   gitCommits: GitCommitSnapshot[];
   cursor: number;
   drafts: { sessionId: string; revision: number; text: string; attachmentIds: string[] }[];

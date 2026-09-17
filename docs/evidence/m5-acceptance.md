@@ -19,7 +19,7 @@
 | A13 | dirty diff、明确范围提交、运行互斥、钩子失败、不 push/merge/扩大暂存 | git.test.ts、git-commit.test.ts、git-commit.spec.ts | M5d 已补后端强杀与浏览器 HTTP 确认丢失重试；完整 Git 条目待最终汇总 |
 | A14 | 项目顺序、切换不重排、草稿状态隔离 | map.spec.ts、browser.spec.ts | 待最终复核 |
 | A15 | 升级后的旧会话打开/继续/fork，MWF 召回/写入 | harness.test.ts 的 application upgrade、memory-agent.test.ts、memory.test.ts、原生契约表 | M5c 应用级固定样本通过；支持声明限于已验证的 0.84.1 → 0.85.1，最终回归仍须包含此项 |
-| A16 | 键盘替代双击、窄窗口、空/错/加载、错误可恢复、不虚报进度 | 全部浏览器 spec、DESIGN.md | 待完整复核、未绑定检查在刷新后的恢复提示及最终截图审查 |
+| A16 | 键盘替代双击、窄窗口、空/错/加载、错误可恢复、不虚报进度 | 全部浏览器 spec、DESIGN.md | M5e 已补未绑定检查恢复提示与窄窗口/键盘证据；待完整交互与最终截图复核 |
 
 C01–C14 的追踪映射沿用规格第 11 节；I01 的依赖方向/公开入口/循环检查继续作为必过检查。I02/I03 的恢复覆盖本轮 M5a 的新增问题；I04/I05/I06 与 A10/A12/A15 对齐；I07 需真实 UI 与内核贯通。固定版本、外部模型和确定性 provider 证据分开记录。
 
@@ -92,3 +92,18 @@ C01–C14 的追踪映射沿用规格第 11 节；I01 的依赖方向/公开入�
 最初浏览器测试在请求仍忙时就检查 HEAD，提前失败；改为等待同请求重试按钮 enabled 后再断言。这是测试同步修正，未改变生产实现。命令与日志：`node --test tests/recovery.test.ts`（`/tmp/parallel-pi-m5d-recovery.log`），`npx playwright test tests/git-commit.spec.ts`（`/tmp/parallel-pi-m5d-browser.log`）。
 
 验证结果：完整后端故障 4 项通过，扩展后的 Git 浏览器专项 1 项通过，类型/格式检查通过。本段仅新增回归和证据，最终 M5 仍需真实外部模型、完整规格/UI 复核和最终运行包验证。
+
+
+### M5e：未绑定仓库检查的全局恢复提示
+
+此前应用保存了 laneId=null 的未收束仓库检查，但公共快照未暴露该状态。界面刷新后只显示正常连接和空项目页，无法知道新操作为何受阻。新增浏览器回归先失败于找不到“仓库检查需要核对”区域，复现日志 `/tmp/parallel-pi-m5e-browser-red.log`。
+
+公共快照现在仅投影 inspect-repository / uncertain / laneId=null 的目录、原因及操作 ID；不暴露原生会话或监督器私有路径。App.vue 在全局连接区域下保留恢复提示，复用现有 warning 样式。按钮通过原 AppDialog 打开已填目录的添加表单，用户明确提交后仍调用原有后端流程：先核对全部旧检查，再检查/登记项目。没有自动重跑、清除锁或绕过证明的新路径。
+
+浏览器使用真实后端和监督器：先运行并收束一个实际子进程，保留它的真实证明，暂时移走 result.json 模拟证明丢失，并植入持久检查意图；启动后状态保持 uncertain。验证刷新不隐藏提示，Enter 打开表单，未恢复证明时提交失败且目录保留，Esc 归还焦点；恢复该真实证明后重试成功，提示消失且项目只登记一次。
+
+已查看 `test-results/unbound-recovery-narrow.png`：390px 下长中文/英文路径和原因完整换行，提示与按钮可见、键盘焦点清晰，无页面横向溢出。UI strict audit 0 errors / 0 warnings；DESIGN lint 0 errors，保留原无 YAML frontmatter 的 1 项提示。设计状态和 canonical owner 已同步，未增加视觉 token。
+
+真实外部模型应用验证尚待本机测试凭据路径。先前 probe 记录明确使用未持久化的临时凭据；本轮仅检查配置存在性，没有读取或输出秘密值，已通过异步问题请求本机配置路径，不要求在聊天中提供密钥。
+
+M5e 验证结果：`npm run check` 全部 65 项 Node 测试、架构/类型/格式检查通过；构建通过；完整 11 项浏览器测试通过。日志 `/tmp/parallel-pi-m5e-check.log`、`/tmp/parallel-pi-m5e-build.log`、`/tmp/parallel-pi-m5e-browser.log`；静态审计 `/tmp/parallel-pi-m5e-ui-audit.json`。本段独立提交，不替代尚未完成的真实模型及最终逐项/运行包验收。
