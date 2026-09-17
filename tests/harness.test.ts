@@ -1,7 +1,15 @@
 import { createMemoryAccess } from '@parallel-pi/infra-mwf';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  existsSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -1434,3 +1442,116 @@ test('unbound metadata recovery does not replay Git hooks and explicit add retri
   await app.refreshProject(owner.id);
   assert.equal(app.snapshot().state.lanes.length, 2);
 });
+
+test(
+  'failed and cancelled native turns survive restart, fork and explicit recovery',
+  { timeout: 30000 },
+  async (t) => {
+    const { root, directory, app, store, deps } = setup();
+    let current = app;
+    t.after(async () => {
+      await current.close();
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    });
+    await current.initialize();
+    await current.addProject(directory);
+    const lane = current.snapshot().state.lanes.find((item) => item.ref === 'refs/heads/main')!;
+    const session = await current.createSession(lane.id, 'Failed history', model);
+    const run = current.enqueue({
+      requestId: 'failed-history',
+      sessionId: session.id,
+      text: 'probe-failed-turn',
+      attachmentIds: [],
+    });
+    await until(() => state(current, run.id).state === 'failed', 'failed native turn');
+    const native = readFileSync(deps.engine.sessionPath(session.id), 'utf8');
+    assert.match(native, /probe-failed-turn/);
+    assert.match(native, /partial before failure/);
+    let history = current.history(session.id).messages;
+    assert.equal(history.find((item) => item.role === 'user')?.text, 'probe-failed-turn');
+    assert.equal(history.find((item) => item.role === 'assistant')?.text, 'partial before failure');
+    await current.close();
+    current = createHarness(deps);
+    await current.initialize();
+    assert.deepEqual(current.history(session.id).messages, history);
+    assert.equal(readFileSync(deps.engine.sessionPath(session.id), 'utf8'), native);
+
+    await current.resume(lane.id);
+    const cancelled = current.enqueue({
+      requestId: 'cancelled-history',
+      sessionId: session.id,
+      text: 'probe-slow-tool',
+      attachmentIds: [],
+    });
+    await until(() => existsSync(join(directory, 'tool.pid')), 'cancelled turn tool started');
+    await current.stop(cancelled.id);
+    assert.equal(state(current, cancelled.id).state, 'cancelled');
+    history = current.history(session.id).messages;
+    const cancelledInput = history.find(
+      (item) => item.role === 'user' && item.text === 'probe-slow-tool',
+    )!;
+    assert.ok(cancelledInput?.forkable);
+    assert.ok(history.some((item) => item.role === 'assistant' && item.text.includes('tool.pid')));
+    const settledNative = readFileSync(deps.engine.sessionPath(session.id), 'utf8');
+    await current.close();
+    // Simulate a cache written by the previous application version.
+    store.transaction((tx) => {
+      tx.state.sessions.find((item) => item.id === session.id)!.messages = [];
+    });
+    current = createHarness(deps);
+    await current.initialize();
+    assert.deepEqual(current.history(session.id).messages, history);
+    assert.equal(readFileSync(deps.engine.sessionPath(session.id), 'utf8'), settledNative);
+    const child = await current.forkSession(
+      session.id,
+      cancelledInput.id,
+      'Cancelled fork',
+      'cancelled-fork',
+    );
+    assert.equal(
+      current.snapshot().state.drafts.find((item) => item.sessionId === child.id)?.text,
+      'probe-slow-tool',
+    );
+    assert.ok(
+      current.history(child.id).messages.some((item) => item.text === 'partial before failure'),
+    );
+    assert.ok(!current.history(child.id).messages.some((item) => item.id === cancelledInput.id));
+
+    await current.close();
+    writeFileSync(deps.engine.sessionPath(session.id), 'invalid header\n');
+    current = createHarness(deps);
+    await current.initialize();
+    assert.deepEqual(
+      current.history(session.id).messages,
+      history,
+      'read failure preserves the existing cache',
+    );
+    assert.equal(
+      current.snapshot().state.lanes.find((item) => item.id === lane.id)?.state,
+      'recovering',
+    );
+    await assert.rejects(current.resume(lane.id), /recovery/);
+    writeFileSync(deps.engine.sessionPath(session.id), settledNative);
+    assert.equal(await current.recoverLane(lane.id), true);
+    assert.equal(
+      current.snapshot().state.lanes.find((item) => item.id === lane.id)?.state,
+      'paused',
+    );
+    await current.resume(lane.id);
+    const continued = current.enqueue({
+      requestId: 'continue-history',
+      sessionId: session.id,
+      text: 'after cancellation',
+      attachmentIds: [],
+    });
+    await until(
+      () => state(current, continued.id).state === 'succeeded',
+      'continued recovered session',
+    );
+    const last = current.history(session.id).messages.at(-1)!;
+    assert.match(last.text, /probe-failed-turn/);
+    assert.match(last.text, /probe-slow-tool/);
+    assert.match(last.text, /after cancellation/);
+  },
+);

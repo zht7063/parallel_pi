@@ -314,6 +314,7 @@ export interface Engine {
   ): Promise<EngineConnection>;
   sessionPath(id: string): string;
   reconcileSession(path: string, directory: string): Promise<boolean>;
+  readSession(path: string, directory: string): EngineMessage[];
 }
 
 export interface Session {

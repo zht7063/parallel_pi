@@ -164,6 +164,15 @@ test('real UI adds a dirty repository, executes images, preserves drafts, retrie
     await expect(page.getByRole('button', { name: '恢复未启动的队列' })).toBeVisible();
     await expect(page.locator('.run-row strong').first()).toHaveText('排队中');
     await expect(page.locator('.run-row').first()).toContainText('等待序列第 1 项');
+    await expect(
+      page.locator('.message').filter({ hasText: 'probe-slow-tool' }).first(),
+    ).toBeVisible();
+    await page.reload();
+    await expect(
+      page.locator('.message').filter({ hasText: 'probe-slow-tool' }).first(),
+    ).toBeVisible();
+    await expect(page.locator('.run-row strong').first()).toHaveText('排队中');
+
     await page.getByRole('button', { name: '恢复未启动的队列' }).click();
     await expect(page.locator('.run-row strong').first()).toHaveText('执行完成', {
       timeout: 15000,

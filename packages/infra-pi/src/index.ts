@@ -1,3 +1,7 @@
+import {
+  parseSessionEntries,
+  SessionManager,
+} from '../../../vendor/pi/packages/coding-agent/dist/core/session-manager.js';
 import { getAgentDir } from '../../../vendor/pi/packages/coding-agent/dist/config.js';
 import {
   mkdirSync,
@@ -435,6 +439,23 @@ export function createEngine(options: {
     sessionPath(id) {
       if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) throw new Error('Invalid session ID');
       return join(sessionRoot, `${id}.jsonl`);
+    },
+    readSession(path, directory) {
+      if (resolve(dirname(path)) !== sessionRoot)
+        throw new Error('Session must belong to the application data directory');
+      const content = readFileSync(path, 'utf8');
+      const header = JSON.parse(content.split('\n')[0] ?? '');
+      if (
+        header.type !== 'session' ||
+        header.version !== 3 ||
+        header.cwd !== directory ||
+        typeof header.id !== 'string'
+      )
+        throw new Error('Native session does not match its workspace');
+      // Native parsing/indexing without opening a writable session or loading extensions.
+      return nativeMessages(
+        SessionManager.inMemory(directory, undefined, parseSessionEntries(content)).getEntries(),
+      );
     },
     async reconcileSession(path, directory) {
       if (!existsSync(path)) return false;

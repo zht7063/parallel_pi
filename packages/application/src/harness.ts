@@ -404,6 +404,30 @@ export function createHarness(deps: {
       tx.emit('handoff.changed', { runId });
     });
   }
+  function refreshHistory(sessionId: string) {
+    const target = session(sessionId);
+    const messages = engine.readSession(target.nativeRef, lane(target.laneId).directory!);
+    store.transaction((tx) => {
+      tx.state.sessions.find((item) => item.id === sessionId)!.messages = messages;
+      tx.emit('session.changed', { sessionId });
+    });
+  }
+  function refreshLaneHistory(laneId: string) {
+    try {
+      for (const target of snapshot().state.sessions.filter(
+        (item) => item.laneId === laneId && item.state === 'ready',
+      ))
+        refreshHistory(target.id);
+      return true;
+    } catch (cause) {
+      setLane(
+        laneId,
+        'recovering',
+        `会话历史读取失败；请核对原生会话后重试恢复：${cause instanceof Error ? cause.message : 'Unknown error'}`,
+      );
+      return false;
+    }
+  }
   async function execute(runId: string) {
     const entry = active.get(runId)!;
     const run = snapshot().state.runs.find((item) => item.id === runId)!;
@@ -440,11 +464,6 @@ export function createHarness(deps: {
         },
         run.laneId,
       );
-      const messages = await entry.connection.messages();
-      store.transaction((tx) => {
-        tx.state.sessions.find((item) => item.id === run.sessionId)!.messages = messages;
-        tx.emit('session.changed', { sessionId: run.sessionId });
-      });
     } catch (cause) {
       result = entry.cancelled
         ? 'cancelled'
@@ -459,7 +478,11 @@ export function createHarness(deps: {
       if (!proof.settled) {
         result = 'interrupted';
         error = proof.reason;
-      } else if (entry.cancelled) result = 'cancelled';
+      } else {
+        if (entry.cancelled) result = 'cancelled';
+        // Only read the native log after all writers have settled, on every outcome.
+        refreshLaneHistory(run.laneId);
+      }
       const current = snapshot().state.runs.find((item) => item.id === run.id)!;
       if (current.state === 'stopping' && result !== 'interrupted') result = 'cancelled';
       const endedAt = runtime.now();
@@ -474,7 +497,9 @@ export function createHarness(deps: {
         record.handoff = { state: 'pending', content, error: null };
         if (!proof.settled || branch.state === 'recovering') {
           branch.state = 'recovering';
-          branch.reason = error ?? 'Pending operation requires reconciliation';
+          branch.reason = !proof.settled
+            ? error
+            : (branch.reason ?? error ?? 'Pending operation requires reconciliation');
         } else if (result !== 'succeeded') {
           branch.state = 'paused';
           branch.reason = error ?? 'Stopped by user';
@@ -678,6 +703,7 @@ export function createHarness(deps: {
             break;
           }
         }
+      if (safe) safe = refreshLaneHistory(laneId);
       if (safe)
         setLane(
           laneId,
@@ -860,8 +886,10 @@ export function createHarness(deps: {
           tx.state.lanes.find((item) => item.id === job.laneId)!.state = 'recovering';
         tx.emit('application.recovering', {});
       });
-      for (const branch of snapshot().state.lanes.filter((item) => item.state === 'recovering'))
-        await recoverLane(branch.id);
+      for (const branch of snapshot().state.lanes) {
+        if (branch.state === 'recovering') await recoverLane(branch.id);
+        else refreshLaneHistory(branch.id);
+      }
       for (const run of snapshot().state.runs) {
         if (run.state === 'interrupted' && !run.handoff) {
           const content = handoffContent(run);

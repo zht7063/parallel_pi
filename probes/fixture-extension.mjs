@@ -24,6 +24,8 @@ export default function (pi) {
         fauxAssistantMessage(fauxToolCall('bash', { command: 'pwd; printf probe-tool-output' }), { stopReason: 'toolUse' }),
         fauxAssistantMessage('tool complete'),
       ]);
+    } else if (event.prompt === 'probe-failed-turn') {
+      faux.setResponses([fauxAssistantMessage('partial before failure', { stopReason: 'error', errorMessage: 'Injected terminal model failure' })]);
     } else if (event.prompt === 'probe-slow-tool') {
       faux.setResponses([
         fauxAssistantMessage(fauxToolCall('bash', { command: 'echo $$ > tool.pid; printf started; sleep 30; echo unsafe > late-write' }), { stopReason: 'toolUse' }),

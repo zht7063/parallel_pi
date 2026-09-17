@@ -115,6 +115,25 @@ test(
     assert.equal(recovered.runs.find((run) => run.id === active.id)?.state, 'interrupted');
     assert.equal(recovered.runs.find((run) => run.id === queued.id)?.state, 'queued');
     assert.equal(recovered.lanes[0]?.state, 'paused');
+    const historyResponse = await fetch(`${url}/api/history?sessionId=${session.id}`, {
+      headers: { cookie },
+    });
+    assert.equal(historyResponse.status, 200);
+    const history = await historyResponse.json();
+    assert.equal(
+      history.messages.filter(
+        (item: { role: string; text: string }) =>
+          item.role === 'user' && item.text === 'probe-slow-tool',
+      ).length,
+      1,
+    );
+    assert.ok(
+      history.messages.some(
+        (item: { role: string; text: string }) =>
+          item.role === 'assistant' && item.text.includes('tool.pid'),
+      ),
+    );
+
     assert.throws(() => process.kill(toolPid, 0), /ESRCH/);
     assert.equal((await command(input)).id, active.id);
     assert.equal((await snapshot()).runs.length, 2);

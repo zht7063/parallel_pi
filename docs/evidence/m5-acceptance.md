@@ -7,9 +7,9 @@
 | A01 | dirty 项目、另一分支 worktree，保留原修改且不搬运 | git.test.ts、harness.test.ts、browser.spec.ts | 待最终复核 |
 | A02 | 远端分支本地化、名称冲突不覆盖、不自动 merge | harness.test.ts 的 branch intentions、map.spec.ts | 待最终复核 |
 | A03 | 单/双击不漂移，浮层/返回恢复视口，不启动运行 | map.spec.ts | 待键盘与完整浏览器复核 |
-| A04 | 继续/接续/独立/fork、来源、图边、当前代码语义 | harness.test.ts、engine.test.ts、map.spec.ts | 待失败/取消后的历史边界和来源复核 |
+| A04 | 继续/接续/独立/fork、来源、图边、当前代码语义 | harness.test.ts、engine.test.ts、map.spec.ts | M5b 已验证失败/取消/重启历史及取消点分叉；来源与完整 A04 待最终复核 |
 | A05 | 同列互斥、跨列并行、默认并发 2 且可配 | domain.test.ts、harness.test.ts | 待最终复核；M5a 补齐元数据检查占用 |
-| A06 | 等待持有名额、失败暂停、其他列继续 | harness.test.ts、browser.spec.ts | 待失败后原生历史与持久状态核对 |
+| A06 | 等待持有名额、失败暂停、其他列继续 | harness.test.ts、browser.spec.ts | M5b 已补失败部分回答与持久历史；完整 A06 待最终复核 |
 | A07 | 收束前不解锁、取消暂停、修改保留、不假报超时成功 | platform.test.ts、harness.test.ts、recovery.test.ts | 待完整进程边界复核 |
 | A08 | 切项目/刷新/关闭网页保持草稿历史和后台任务，重连不重跑 | browser.spec.ts、map.spec.ts、http-workspace.test.ts | 待最终复核 |
 | A09 | 重启中断准确，残留收束后明确恢复，不重放 | recovery.test.ts、harness.test.ts、git-commit.test.ts | M5a 已补真实仓库检查 SIGKILL；Git 提交期间真实后端强杀组合仍待补强 |
@@ -43,3 +43,16 @@ C01–C14 的追踪映射沿用规格第 11 节；I01 的依赖方向/公开入�
 - 后端在 fsmonitor 中被 SIGKILL，重启时脱离子进程已消失；未登记的项目不被误报成功；只有明确重试才再次运行钩子；代码和索引保持原样。
 
 原始专项与最终生命周期专项已通过。`npm run check` 全部 61 项测试及架构/类型/格式检查通过，构建与完整 10 项浏览器测试通过。最终审查补上 worker 切换 cwd 前解析相对路径：回归先出现 `Git operation failed`，修正后完整 6 项 Git 测试及类型/格式检查通过。M5a 只关闭这个具体缺口，不代表 A01–A16 全部完成。
+
+
+### M5b：失败、取消和重启后的原生历史
+
+最小复现命令：`node --test --test-name-pattern='failed native turns' tests/harness.test.ts`。固定 provider 驱动真实 pi 保存用户消息与失败回答；修复前应用 history 返回空，断言为 `undefined`，预期 `probe-failed-turn`。文件已实际保存这两条内容，排除了原生未落盘；成功路径以外没有更新应用缓存是直接原因。
+
+现在在监督器证明写进程收束后，以固定 pi 的只读解析和内存 SessionManager 重建缓存。启动时补齐静止会话历史，恢复中的分支先核验全部遗留进程。读取不会打开模型、扩展或工具，不写原生文件、不重放提示。读取失败保留已有缓存、将分支置为 recovering；修复原文件后通过既有恢复核对入口转为 paused，再由用户明确恢复队列。运行结果与历史恢复状态分离，不把已完成的模型运行改报失败。
+
+专项 `failed and cancelled native turns survive restart, fork and explicit recovery` 覆盖真实模型错误的部分回答、真实 Bash 中途取消、旧空缓存重建、读取前后原生文件字节不变、从取消提问之前分叉（原问题进入草稿）、损坏 header 保留缓存、修复后继续时模型收到此前提问。真实 backend SIGKILL 测试新增 HTTP history 断言，证明重启后中断提问和工具调用可见且未重复。浏览器主闭环新增取消后刷新仍显示该提问、排队项仍未启动的断言。
+
+本项不扩大为任意旧 pi 版本或任意损坏文件修复承诺；原生解析沿用其对不完整/无法解析 JSONL 行的处理，应用不重写源文件。A15 的 0.84.1 旧会话应用兼容仍待独立验收。
+
+验证结果：`npm run check` 62 项 Node 测试、架构、类型及格式检查全部通过；`npm run build` 通过；完整 10 项浏览器测试通过。日志 `/tmp/parallel-pi-m5b-check.log`、`/tmp/parallel-pi-m5b-build.log`、`/tmp/parallel-pi-m5b-browser.log`。本段独立提交，M5 全部条目的最终验收仍未结束。
