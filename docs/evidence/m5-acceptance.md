@@ -1,6 +1,6 @@
 # M5 完整验收工作表
 
-本表依据 `docs/mvp-spec.md` 的 C01–C14/A01–A16 和 `docs/implementation-handoff.md` 的 I01–I07。现有阶段测试只是证据入口，必须核对实际断言与完整行为，不能因标题相似就关闭条目。当前不是 MVP 完成报告。
+本表依据 `docs/mvp-spec.md` 的 C01–C14/A01–A16 和 `docs/implementation-handoff.md` 的 I01–I07。现有阶段测试只是证据入口，必须核对实际断言与完整行为，不能因标题相似就关闭条目。最终所有条目已核实，结论见 [MVP 完成报告](mvp-completion.md)。下方阶段记录保留当时的待办状态，由后续阶段关闭。
 
 | 条目 | 完整通过条件 | 现有证据入口 | M5 状态 / 待核对 |
 | --- | --- | --- | --- |
@@ -13,8 +13,8 @@
 | A07 | 收束前不解锁、取消暂停、修改保留、不假报超时成功 | platform.test.ts、harness.test.ts、recovery.test.ts | 已核实：双重脱离后代收束、缺少证明不解锁、PID 身份核对、取消暂停与 dirty 保留 |
 | A08 | 切项目/刷新/关闭网页保持草稿历史和后台任务，重连不重跑 | browser.spec.ts、map.spec.ts、http-workspace.test.ts | 已核实切项目/刷新/草稿/历史与 HTTP/SSE 去重；M5i 关闭最后页面后真实工具仍完成，重开保留草稿/历史且不新增 run |
 | A09 | 重启中断准确，残留收束后明确恢复，不重放 | recovery.test.ts、harness.test.ts、git-commit.test.ts | 已核实：真实执行/仓库检查/pre/post-commit 后端 SIGKILL；未启动队列保留，明确恢复，不重放 |
-| A10 | 模型改变范围明确，排队选择冻结，无静默替换 | configuration.test.ts、project-settings.spec.ts、harness.test.ts | 已核实配置来源、冻结模型、未知字段/损坏原文/信任/凭据遮罩与不可用拒绝；真实外部模型应用调用仍待凭据 |
-| A11 | 图片可预览移除、真实送达、不支持时明确阻止 | browser.spec.ts、engine.test.ts、harness.test.ts | 已核实图片持久化/预览/实际移除/原生送达及 text-only 拒绝后显式换模重发；真实外部模型图片理解仍待验收 |
+| A10 | 模型改变范围明确，排队选择冻结，无静默替换 | configuration.test.ts、project-settings.spec.ts、harness.test.ts | 已核实配置来源、冻结模型、未知字段/损坏原文/信任/凭据遮罩与不可用拒绝；M5k 真实 DeepSeek Flash 应用调用通过 |
+| A11 | 图片可预览移除、真实送达、不支持时明确阻止 | browser.spec.ts、engine.test.ts、harness.test.ts | 已核实图片持久化/预览/实际移除/原生送达及 text-only 拒绝后显式换模重发；M5k 真实 DeepSeek Flash 图片理解通过 |
 | A12 | 来源/scope、并发纠正、失败暂停、同请求重试或明确继续 | memory.test.ts、memory-agent.test.ts、memory.spec.ts、harness.test.ts | 已核实原生来源/scope、修订冲突保留草稿、保存失败暂停、同请求重试和明确继续；原生 MCP 根目录边界通过 |
 | A13 | dirty diff、明确范围提交、运行互斥、钩子失败、不 push/merge/扩大暂存 | git.test.ts、git-commit.test.ts、git-commit.spec.ts | 已核实整文件原生提交、部分暂存拒绝、未选索引保留、过滤器实际树、钩子失败/越界与崩溃对账；丢失确认不重复提交 |
 | A14 | 项目顺序、切换不重排、草稿状态隔离 | map.spec.ts、browser.spec.ts | 已核实：M5g 完整 DOM 顺序不重排，新项目追加到底部；项目草稿与后台状态隔离 |
@@ -154,3 +154,7 @@ M5f 验证结果：`npm run check` 全部 65 项 Node 测试和架构/类型/格
 ### M5j：保留归档
 
 构建与完整 12 项浏览器通过；干净 `9154eaa` 的非 development Linux x64 归档已经保留、校验并在源码外解包预检，具体路径、SHA-256 与版本见 [运行候选](m5-runtime-candidate.md)。此前“最终保留归档待制作”已由此候选补齐；如后续真实模型验收需要产品修复，须重新构建、验证并替换候选，不复用旧摘要。当前剩余门槛是外部模型应用验收和最终完成结论。
+
+### M5k：最后门槛关闭
+
+真实 DeepSeek Flash 通过应用文字/工具/图片/重启继续验收，见 [详细证据](m5-live-application.md)。最终规格汇总、运行归档、安装说明及完成结论均已归档于 [MVP 完成报告](mvp-completion.md)。前述阶段中的凭据/外部模型/交付待办已关闭；没有以受控 provider 代替该最终检查。
