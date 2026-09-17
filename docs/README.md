@@ -1,6 +1,6 @@
 # parallel_pi MVP 设计与讨论
 
-设计阶段基线已完成，已进入技术验证。当前进度以 [V01–V04 验证记录](validation.md) 为准，运行方法见 [探针说明](../probes/README.md)。优先阅读 [MVP 设计规格 v0.1](mvp-spec.md)、[页面线框图册](design/README.md) 和 [设计评审与交接](design-review.md)。规格区分用户已确认约束 C、建议默认值 D、技术验证项 V；下方文档保留讨论与研究依据。
+设计、架构及 Linux 探针阶段已具备进入 MVP 实施的基础，应用开发尚未开始。先阅读 [实施交接与遗留任务](implementation-handoff.md)。当前进度以 [V01–V04 验证记录](validation.md) 为准，运行方法见 [探针说明](../probes/README.md)。优先阅读 [MVP 设计规格 v0.1](mvp-spec.md)、[页面线框图册](design/README.md) 和 [设计评审与交接](design-review.md)。规格区分用户已确认约束 C、建议默认值 D、技术验证项 V；下方文档保留讨论与研究依据。
 
 - [已确认技术架构](./architecture.md)：五层职责、模块与进程、内核适配、数据归属、执行恢复及升级策略；前端采用 Vue 3，尚未实现。
 - [交互式项目结构图](./visualization/project-structure.html) 与 [结构说明](./visualization/README.md)：运行链路、目录映射与数据边界。
