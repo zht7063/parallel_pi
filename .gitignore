@@ -5,3 +5,7 @@ probes/.cache/
 .env.*
 !.env.example
 .DS_Store
+
+# Native pi credentials and session state stay local.
+.pi/agent/auth.json
+.pi/agent/sessions/

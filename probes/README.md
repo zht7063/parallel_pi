@@ -1,6 +1,6 @@
 # V01–V04 技术探针
 
-这些是隔离实验，不是应用实现。所有 Git、会话和记忆写入都发生在临时目录；不使用用户项目或真实凭据。版本见 `versions.json`。
+这些是隔离实验，不是应用实现。所有 Git、会话和记忆写入都发生在临时目录；默认可控测试不使用用户项目或真实凭据；显式运行的 live 探针使用用户授权的 provider 凭据。版本见 `versions.json`。
 
 ## V01
 
@@ -52,3 +52,5 @@ MWF 从 `versions.json` 的固定提交构建到忽略的 `.cache/mwf-source`，
 全套入口排除真实 provider 测试；真实调用用 `npm run probe:live` 单独运行。`run.mjs` 将 TAP 和环境/源码哈希写入 `results/local/<platform>.*`。源码在运行期间改变会使该份证据失效；只有检查过的脱敏结果才复制到跟踪区。
 
 修订适配验证依赖固定 MWF 内部 API；它不是对公开 CLI 已支持 expected_revision 的承诺。详见报告的 V04 及剩余门槛。
+
+2026-09-17：DeepSeek `deepseek-flash` 已通过上述四个真实调用场景，见 `results/deepseek-live-linux.json` 与 `.txt`。macOS 尚待验证。

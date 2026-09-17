@@ -84,6 +84,6 @@ Q4 采用先每 Run 一个进程、根据 V01 测量决定是否复用；Q5 采�
 
 - 运行与版本：[探针说明](../probes/README.md)、[版本清单](../probes/versions.json)。
 - 实际能力、缺口和剩余门槛：[技术验证记录](validation.md)。
-- 真实 provider 和 macOS 仍缺少执行环境/凭据，不能报告通过。
+- 2026-09-17 已补充 DeepSeek `deepseek-flash` 的真实文字、工具、图片及持久会话恢复验证；macOS 仍未执行。
 - 平台监督和 pending 操作对账应在应用纵向闭环中实现；未核验时继续保持 recovering，禁止自动重放。
 - 本项目没有初始化 MWF；临时项目中的记忆及凭据 fixture 随测试清理，运行缓存、依赖和本地报告已忽略。

@@ -1,0 +1,33 @@
+{
+  "recordedAt": "2026-09-17T04:14:26.981787+00:00",
+  "platform": "linux",
+  "node": "v26.8.2",
+  "piCommit": "6671c604766b3670ed95f405aa7856835d0ca702",
+  "command": "node --test probes/v01-live.test.mjs",
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "endpoint": "https://api.deepseek.com",
+  "status": "passed",
+  "checks": [
+    "text marker",
+    "successful bash tool execution",
+    "red image understanding",
+    "persisted session continuation"
+  ],
+  "tests": 1,
+  "failed": 0,
+  "skipped": 0,
+  "sourceSha256": {
+    "probes/v01-live.test.mjs": "7d9248cdfc5a13699cf67a2387e54b7fadf21629a9904b7dace6a333e59179e2",
+    "probes/rpc.mjs": "5d606bf544d6e3fccb3cbe311277362ba3ee77a18eccda788e274f67e5b72903",
+    "probes/fixture-extension.mjs": "fd46bee85d7b9965ac82ebca24f78ca3bb05cbf4eaca4589dcc084eaa9c897ce",
+    "probes/fixtures/red-square.png": "becf0cf30d6978325d9ccdea315923e2dbbf7e591c2857b92b5f82e41957bb98",
+    "probes/versions.json": "899a1bb345337f97a244deb601ecbf695a7082ef978fd83b3584aba78a573a36"
+  },
+  "limitations": [
+    "Single live run; not a reliability or performance benchmark.",
+    "No macOS execution.",
+    "No real-provider historical-version session upgrade test."
+  ],
+  "credentials": "Temporary user-authorized environment credential; not persisted."
+}
