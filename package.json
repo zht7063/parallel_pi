@@ -11,7 +11,7 @@
     "probe:v04": "node --test probes/v04.test.mjs probes/v04-adapter.test.mjs probes/v04-jobs.test.mjs",
     "probe:live": "node --test probes/v01-live.test.mjs",
     "dev": "node --watch apps/server/src/index.ts",
-    "start": "node apps/server/src/index.ts",
+    "start": "node scripts/runtime.mjs",
     "build": "npm run typecheck && vite build --config apps/web/vite.config.ts",
     "typecheck": "tsc --noEmit -p packages/domain/tsconfig.json && tsc --noEmit && vue-tsc --noEmit -p apps/web/tsconfig.json",
     "check:architecture": "node scripts/check-architecture.mjs",
@@ -19,7 +19,8 @@
     "check": "npm run check:architecture && npm run typecheck && npm test && npm run format:check",
     "format": "prettier --write apps packages scripts tests playwright.config.ts",
     "format:check": "prettier --check apps packages scripts tests playwright.config.ts",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "test:package": "node --test tests/runtime-package.mjs"
   },
   "engines": {
     "node": "26.8.2"

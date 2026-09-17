@@ -1,0 +1,31 @@
+# macOS host: create ~/parallel-pi-projects before starting this VM.
+# Linux application data and dependencies stay on the VM disk, not this mount.
+minimumLimaVersion: 2.2.0
+base:
+  - template:_images/ubuntu-24.04
+vmType: vz
+mountType: virtiofs
+cpus: 4
+memory: 8GiB
+disk: 60GiB
+mounts:
+  - location: ~/parallel-pi-projects
+    mountPoint: /workspaces
+    writable: true
+containerd:
+  system: false
+  user: false
+portForwards:
+  - guestIP: 127.0.0.1
+    guestPort: 4317
+    hostIP: 127.0.0.1
+    hostPort: 4317
+  - guestPortRange: [1, 65535]
+    ignore: true
+provision:
+  - mode: system
+    script: |
+      #!/bin/sh
+      set -eu
+      apt-get update
+      apt-get install -y git python3 ca-certificates curl xz-utils

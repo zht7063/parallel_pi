@@ -152,7 +152,9 @@ def backup(args):
                 'roots': [str(root) for root in roots],
                 'databaseSchema': schema,
                 'versions': json.loads((ROOT / 'probes/versions.json').read_text()),
-                'applicationCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+                'applicationCommit': (json.loads((ROOT / 'runtime-manifest.json').read_text())['applicationCommit']
+                                      if (ROOT / 'runtime-manifest.json').exists()
+                                      else subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()),
                 'dependencyLockSha256': digest(ROOT / 'package-lock.json'),
                 'entries': entries, 'requiredFiles': [str(path).lstrip('/') for path in required],
                 'sha256': digest(archive),

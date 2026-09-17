@@ -1,6 +1,6 @@
 # 本地开发与验证
 
-当前实现阶段见 [里程碑](milestones.md)。M1–M3 已完成，执行恢复、共享关系地图、原生 fork 与历史分页已贯通；后续继续 M4/M5，当前不是完整 MVP。
+当前实现阶段见 [里程碑](milestones.md)。M1–M3 已完成，执行恢复、共享关系地图、原生 fork 与历史分页已贯通；M4 配置、Git/MWF 与运行交付已接入，接下来执行 M5 完整验收，当前不是完整 MVP。
 
 ## 环境与运行
 
@@ -16,7 +16,7 @@ npm start
 
 在浏览器打开终端输出的 `http://127.0.0.1:4317`。仅监听 loopback，Host 必须使用该地址。通过 `PARALLEL_PI_PORT` 修改端口。`npm run dev` 监听后端改动；修改前端后重新运行构建。
 
-后端当前依赖 Git、Python 3 和提供 pidfd 的 Linux 内核。Python 监督器负责接管脱离进程组的工具并核验收束。macOS 用户已接受本机 Linux 环境（Docker Desktop/Lima）路线；启动打包尚待 M4/M5 完成，直接以 macOS Node 启动仍会拒绝，实机验证后置不代表当前已经验证可运行。
+后端当前依赖 Git、Python 3.11+ 和提供 pidfd 的 Linux 内核。Python 监督器负责接管脱离进程组的工具并核验收束。macOS 用户已接受本机 Linux 环境（Docker Desktop/Lima）路线；已提供 [Linux 运行包与 Lima 配置](linux-runtime.md)，直接以 macOS Node 启动仍会拒绝；macOS 实机验证后置，不能把 Linux 或 YAML 验证当作 macOS 已实测。
 
 `node probes/setup-pi.mjs` 初始化固定版本子模块并离线构建 pi；`node probes/setup-mwf.mjs` 获取固定 MWF 源码并构建其 CLI；首次安装 npm 依赖仍需网络。版本依据是 `probes/versions.json`，不能换成系统任意版本 pi。原生凭据沿用 pi 的配置目录，`PARALLEL_PI_AGENT_DIR` 可指定隔离目录；不要把凭据写入项目文件或提交。
 
