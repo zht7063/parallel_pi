@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -127,3 +135,28 @@ test(
     assert.equal(readFileSync(sourceRef, 'utf8'), sourceBytes);
   },
 );
+
+test('session identity accepts directory aliases but rejects a different workspace', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'parallel-session-alias-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const directory = join(root, 'workspace');
+  mkdirSync(directory);
+  mkdirSync(join(root, 'other'));
+  symlinkSync(directory, join(root, 'alias'));
+  const engine = createEngine({
+    supervisor: createSupervisor(join(root, 'supervision')),
+    sessionRoot: join(root, 'sessions'),
+  });
+  symlinkSync(join(root, 'sessions'), join(root, 'session-alias'));
+  const path = engine.sessionPath('test');
+  writeFileSync(
+    path,
+    JSON.stringify({ type: 'session', version: 3, cwd: directory, id: 'test' }) + '\n',
+  );
+  assert.equal(await engine.reconcileSession(path, join(root, 'alias')), true);
+  assert.deepEqual(
+    engine.readSession(join(root, 'session-alias/test.jsonl'), join(root, 'alias')),
+    [],
+  );
+  await assert.rejects(engine.reconcileSession(path, join(root, 'other')), /does not match/);
+});

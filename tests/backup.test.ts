@@ -27,6 +27,7 @@ test('offline backup rejects live/unfinished state and preserves complete local 
   writeFileSync(join(repo, 'dirty.txt'), 'uncommitted content');
   writeFileSync(join(repo, '.mwf', 'memory.md'), 'original memory');
   writeFileSync(join(data, 'sessions', 'native.jsonl'), '{"type":"session"}\n');
+  symlinkSync(data, join(root, 'data-alias'));
   let store = openStore(data);
   t.after(() => store.close());
   store.transaction((tx) => {
@@ -41,7 +42,7 @@ test('offline backup rejects live/unfinished state and preserves complete local 
       id: 's',
       laneId: 'l',
       title: 'original',
-      nativeRef: join(data, 'sessions/native.jsonl'),
+      nativeRef: join(root, 'data-alias/sessions/native.jsonl'),
       state: 'ready',
       model: { provider: 'test', model: 'test' },
       createdAt: 1,

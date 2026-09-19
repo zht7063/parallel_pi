@@ -15,7 +15,7 @@
     "build": "npm run typecheck && vite build --config apps/web/vite.config.ts",
     "typecheck": "tsc --noEmit -p packages/domain/tsconfig.json && tsc --noEmit && vue-tsc --noEmit -p apps/web/tsconfig.json",
     "check:architecture": "node scripts/check-architecture.mjs",
-    "test": "node --test tests/*.test.ts tests/*.test.mjs",
+    "test": "node --import ./tests/environment.mjs --test tests/*.test.ts tests/*.test.mjs",
     "check": "npm run check:architecture && npm run typecheck && npm test && npm run format:check",
     "format": "prettier --write apps packages scripts tests playwright.config.ts",
     "format:check": "prettier --check apps packages scripts tests playwright.config.ts",

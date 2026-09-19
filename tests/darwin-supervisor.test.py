@@ -18,8 +18,18 @@ class Child:
     def poll(self):
         return None
 
+    def wait(self, timeout):
+        self.reaped = True
+        return 0
+
 
 class CleanupTests(unittest.TestCase):
+    def test_count_can_change_after_poll_but_child_must_still_be_reaped(self):
+        child = Child()
+        with patch.object(darwin, 'active', return_value=1):
+            self.assertTrue(darwin.cleanup(None, 42, child))
+        self.assertTrue(getattr(child, 'reaped', False), 'count is not waitpid confirmation')
+
     def test_empty_enumeration_does_not_prove_cleanup(self):
         with patch.object(darwin, 'active', return_value=2), patch.object(darwin, 'members', return_value=[]), patch.object(darwin.time, 'monotonic', side_effect=[0, 0, 7]), patch.object(darwin.time, 'sleep'):
             self.assertFalse(darwin.cleanup(None, 42, Child()))

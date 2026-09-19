@@ -83,3 +83,13 @@ Linux 上 Python 语法与非 macOS 拒绝路径已验证；macOS 实际 API 可
 新增跨平台清理决策检查及 Mac 专属实际监督器死亡、等待 shell 取消场景；Linux 结果不代替 Mac。`scripts/verify-macos.sh` 准备匹配架构候选和日志，执行源码与安装后平台测试。N1/N3/N4/N5 仍未整体关闭：正式适配、原生依赖包、完整安装应用路径和睡眠唤醒必须等待 Mac 实测，当前环境只能制作 Linux tarball。
 
 本候选 Linux 验证结果：`npm run check` 70 项通过、2 项 Darwin 专属用例跳过，架构/类型/格式通过；新增 Python 清理决策检查 6 项通过（由平台测试调用，不是额外的 Mac 实测）。最终类型、格式、Python/shell 语法及 diff 检查通过。Vite 构建通过；完整 12 项浏览器测试通过（约 3.3 分钟）；`npm run test:npm` 在候选目录上通过（约 209 秒），包括新增 Darwin 资源入包与目标 OS 元数据断言。Linux 候选位于 `/tmp/parallel-pi-darwin-linux-candidate`，是开发回归产物，不可用于 Mac。日志在本机 `/tmp/parallel-pi-darwin-{check,npm-test,browser}.log`。没有把 Mac 专属跳过计为通过，也没有关闭跨平台交付门槛。
+
+### N1c：首次完整 Mac 日志与已复现修复
+
+用户提供 macOS 26.6.2 / arm64 的 validation.log，对应 114cb6d：探针、依赖和构建通过；Node 验收 48 通过、14 失败、8 取消、2 个 Linux 专属跳过，未进入 npm 打包阶段。正式 Mac 验收未通过。
+
+已在 Linux 使用显式目录 symlink 重现并修复：备份引用清单没有规范化而与归档名称不一致；会话工作区与会话父目录直接比较字符串而拒绝同一物理目录的别名。另以确定性决策测试重现内核计数已归零但直接子进程还没 waitpid 回收的窗口，清理现在额外等待直接子进程回收；此修复是否完全解释 Mac SIGKILL 断言仍待实机复验。测试临时根目录统一为 realpath，显式 symlink 回归保留，异工作区拒绝不放宽。
+
+多项 RPC、启动及应用超时的根因仍未确认；不提高超时、不删除失败用例。Mac 脚本先运行平台专项作为门槛，再串行运行全部 Node 文件以排查跨套件负载影响（套件内部的业务并发测试保留）。桥接失败输出 launchd 生命周期字段、owner/result 存在性及原 worker 错误，不输出环境或凭据。串行成功也不等于并发压力验收通过。
+
+N1c 本地验证：显式别名备份/会话测试与退出回收决策测试均先观察到失败，再修复通过。`npm run check` 71 通过、2 个 Mac 专属跳过（0 失败/取消），架构/类型/格式通过；Python 决策检查 7 项通过。以 symlink TMPDIR 模拟 Mac 路径别名的 CLI/配置/Git 四项专项通过；平台专项 7 通过、2 Mac 跳过。编译后 npm 候选的离线安装、真实 MVP 数据升级和包内备份验证通过（约 213 秒）。日志 `/tmp/pi-mac-fixes-check.log`、`/tmp/pi-mac-fixes-package.log`。这些均为 Linux 证据，等待用户重新执行 Mac 脚本，不宣称原 14 个 Mac 失败和 8 个取消已全部关闭。

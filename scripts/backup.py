@@ -129,6 +129,7 @@ def backup(args):
         required.extend(data / 'attachments' / (item['id'] + '.json') for item in state['attachments'])
         required.extend(data / 'handoffs' / (run['id'] + '.json') for run in state['runs']
                         if run.get('handoff', {}).get('state') == 'saved')
+        required = [path.resolve() for path in required]
         for path in required:
             if not path.is_file() or not contained(path.resolve(), roots):
                 raise ValueError(f'Missing or external session/attachment reference: {path}')

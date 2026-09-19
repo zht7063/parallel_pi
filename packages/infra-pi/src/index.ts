@@ -273,6 +273,15 @@ class Rpc {
   }
 }
 
+function sameDirectory(left: unknown, right: string): boolean {
+  if (typeof left !== 'string') return false;
+  try {
+    return realpathSync(left) === realpathSync(right);
+  } catch {
+    return false;
+  }
+}
+
 export function createEngine(options: {
   supervisor: ProcessSupervisor;
   sessionRoot: string;
@@ -286,8 +295,8 @@ export function createEngine(options: {
   function forkPaths(input: ForkInput) {
     if (
       !/^[a-zA-Z0-9_-]{1,128}$/.test(input.operationId) ||
-      resolve(dirname(input.sourceRef)) !== sessionRoot ||
-      resolve(dirname(input.targetRef)) !== sessionRoot ||
+      !sameDirectory(dirname(input.sourceRef), sessionRoot) ||
+      !sameDirectory(dirname(input.targetRef), sessionRoot) ||
       input.sourceRef === input.targetRef
     )
       throw new Error('Invalid application fork paths');
@@ -316,7 +325,7 @@ export function createEngine(options: {
       header?.type !== 'session' ||
       header.version !== 3 ||
       header.parentSession !== input.sourceRef ||
-      header.cwd !== input.directory ||
+      !sameDirectory(header.cwd, input.directory) ||
       entries.some((entry) => entry.id === input.entryId)
     )
       throw new Error('Fork snapshot differs from its native boundary');
@@ -442,14 +451,14 @@ export function createEngine(options: {
       return join(sessionRoot, `${id}.jsonl`);
     },
     readSession(path, directory) {
-      if (resolve(dirname(path)) !== sessionRoot)
+      if (!sameDirectory(dirname(path), sessionRoot))
         throw new Error('Session must belong to the application data directory');
       const content = readFileSync(path, 'utf8');
       const header = JSON.parse(content.split('\n')[0] ?? '');
       if (
         header.type !== 'session' ||
         header.version !== 3 ||
-        header.cwd !== directory ||
+        !sameDirectory(header.cwd, directory) ||
         typeof header.id !== 'string'
       )
         throw new Error('Native session does not match its workspace');
@@ -464,14 +473,14 @@ export function createEngine(options: {
       if (
         header.type !== 'session' ||
         header.version !== 3 ||
-        header.cwd !== directory ||
+        !sameDirectory(header.cwd, directory) ||
         typeof header.id !== 'string'
       )
         throw new Error('Native session does not match the pending operation');
       return true;
     },
     async open(input, emit) {
-      if (resolve(dirname(input.sessionRef)) !== sessionRoot)
+      if (!sameDirectory(dirname(input.sessionRef), sessionRoot))
         throw new Error('Session must belong to the application data directory');
       if (input.create) writeFileSync(input.sessionRef, '', { flag: 'wx', mode: 0o600 });
       else if (!existsSync(input.sessionRef)) throw new Error('Native session file is missing');

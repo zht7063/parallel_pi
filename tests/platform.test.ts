@@ -27,6 +27,21 @@ async function waitFor(path: string) {
   }
   throw new Error(`Timed out waiting for ${path}`);
 }
+function assertProcessGone(pid: number) {
+  try {
+    process.kill(pid, 0);
+  } catch (error) {
+    assert.equal((error as NodeJS.ErrnoException).code, 'ESRCH');
+    return;
+  }
+  const observed = spawnSync('ps', ['-o', 'pid=,ppid=,stat=,comm=', '-p', String(pid)], {
+    encoding: 'utf8',
+  });
+  assert.fail(
+    `Process ${pid} remains visible after cleanup proof: ${observed.stdout.trim() || observed.stderr.trim()}`,
+  );
+}
+
 function temporary() {
   return mkdtempSync(join(tmpdir(), 'parallel-platform-'));
 }
@@ -86,7 +101,7 @@ while True: time.sleep(1)
   const pid = Number(readFileSync(join(root, 'detached.pid'), 'utf8'));
   const proof = await handle.stop();
   assert.equal(proof.settled, true, proof.reason);
-  assert.throws(() => process.kill(pid, 0), /ESRCH/);
+  assertProcessGone(pid);
   await delay(1600);
   assert.equal(existsSync(join(root, 'unsafe')), false);
 });
@@ -121,7 +136,7 @@ test('backend SIGKILL closes input, supervisor reaps tools, and restart can veri
   await exited;
   const proof = await createSupervisor(join(root, 'supervision')).recover('backend-crash');
   assert.equal(proof.settled, true, proof.reason);
-  assert.throws(() => process.kill(pid, 0), /ESRCH/);
+  assertProcessGone(pid);
 });
 
 test('recovery tombstone prevents a launcher delayed across the spawn/record crash window', async (t) => {

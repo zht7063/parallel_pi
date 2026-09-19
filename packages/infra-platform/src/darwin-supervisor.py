@@ -108,6 +108,9 @@ def cleanup(lib, coalition, child):
     while time.monotonic() < deadline:
         child.poll()  # Reap our direct child before checking kernel accounting.
         if active(lib, coalition) == 1:
+            # The task counter can change after poll(), before waitpid has
+            # reaped the direct child. Do not publish proof while it is a zombie.
+            child.wait(timeout=1)
             return True
         # Freeze candidates before killing: killing a waited-on child must not
         # wake its still-running parent into another command. Repeat until every
@@ -325,6 +328,18 @@ def run(directory, cwd, command):
                                 stream = sys.stdout.buffer if name == 'stdout' else sys.stderr.buffer
                                 stream.write(base64.b64decode(payload, validate=True))
                                 stream.flush()
+        except Exception:
+            print(json.dumps({'stage': 'darwin-bridge-failed', 'domain': domain, 'label': label, 'ownerRecorded': (directory / 'owner.json').exists(), 'cleanupRecorded': (directory / 'result.json').exists()}), file=sys.stderr)
+            # Whitelist lifecycle fields; never print launchd's environment dump.
+            try:
+                status = subprocess.run(['/bin/launchctl', 'print', f'{domain}/{label}'], capture_output=True, text=True, timeout=2)
+                for line in status.stdout.splitlines():
+                    if line.strip().startswith(('state = ', 'pid = ', 'runs = ', 'last exit code = ', 'last terminating signal = ')):
+                        print('launchd: ' + line.strip(), file=sys.stderr)
+                print(f'launchd query exit: {status.returncode}', file=sys.stderr)
+            except (OSError, subprocess.TimeoutExpired):
+                print('launchd status unavailable', file=sys.stderr)
+            raise
         finally:
             recover(directory)
             log = directory / 'worker.stderr'

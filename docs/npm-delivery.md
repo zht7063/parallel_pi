@@ -50,7 +50,7 @@ npm run test:npm
 
 ## macOS 候选验收（尚未通过）
 
-需要桌面登录会话、Node 26.8.2、Git 2.43+、Python 3.11+。在当前分支仓库根目录运行 `bash scripts/verify-macos.sh`；使用 uv 管理 Python 时运行 `uv run --python 3.11 bash scripts/verify-macos.sh`。脚本准备固定依赖、构建、运行探针和后端套件，再离线安装 npm tarball，并对包内监督器重复正常退出、取消、后端崩溃和监督器崩溃测试。测试使用临时仓库和受控 provider，不需要模型密钥。源码外安装后的全应用/Web/真实模型验收与睡眠唤醒仍需单独完成，脚本不宣称覆盖这些项目。
+需要桌面登录会话、Node 26.8.2、Git 2.43+、Python 3.11+。在当前分支仓库根目录运行 `bash scripts/verify-macos.sh`；使用 uv 管理 Python 时运行 `uv run --python 3.11 bash scripts/verify-macos.sh`。脚本准备固定依赖、构建并运行探针，先以平台专项为门槛，再串行运行完整后端套件（当前用于排查跨套件启动负载），然后离线安装 npm tarball，并对包内监督器重复正常退出、取消、后端崩溃和监督器崩溃测试。测试使用临时仓库和受控 provider，不需要模型密钥。源码外安装后的全应用/Web/真实模型验收与睡眠唤醒仍需单独完成，脚本不宣称覆盖这些项目。
 
 脚本把当前已提交版本克隆到普通本地目录再构建，避免依赖 iCloud 工作目录；存在未提交的跟踪文件改动时会停止。产物、隔离源码与日志保存在新的 `~/parallel-pi-candidates/macos.XXXXXX/`，脚本会打印包、校验和、日志和启动命令，不覆盖旧候选、不修改全局 npm 安装。若任何步骤失败即停止，请保留 validation.log。初始 Node/Python 检查失败时直接显示错误，尚未生成日志。不要把 Linux tarball 当作 Mac 包安装。
 
