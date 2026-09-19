@@ -2,6 +2,11 @@
 # Build and exercise a native candidate; uses only temporary test projects/providers.
 set -euo pipefail
 umask 077
+mode=${1:-full}
+case "$mode" in
+  full|--focus) ;;
+  *) echo 'Usage: bash scripts/verify-macos.sh [--focus]' >&2; exit 1 ;;
+esac
 cd "$(dirname "$0")/.."
 if [ "$(uname -s)" != Darwin ]; then
   echo 'This acceptance script requires a macOS desktop login session.' >&2
@@ -32,6 +37,13 @@ npm run build
 # Isolate platform failures before the expensive full suite. Keep all test cases,
 # but serialize files while diagnosing launchd startup under concurrent load.
 node --import ./tests/environment.mjs --test tests/platform.test.ts
+if [ "$mode" = --focus ]; then
+  node --import ./tests/environment.mjs --test --test-concurrency=1 \
+    --test-name-pattern='actual pi and configuration|supervised native model|real supervised pi persists|supervised recovery after pre/post' \
+    tests/configuration.test.ts tests/engine.test.ts tests/git-commit.test.ts
+  printf '\nFocused checks passed; full acceptance and npm packaging have not run. Log: %s/validation.log\n' "$candidate_root"
+  exit 0
+fi
 npm run check:architecture
 npm run typecheck
 node --import ./tests/environment.mjs --test --test-concurrency=1 tests/*.test.ts tests/*.test.mjs

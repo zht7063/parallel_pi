@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import {
   inspectGitChanges,
   commitGitFiles,
@@ -194,7 +195,7 @@ test(
         head = git('rev-parse', 'HEAD');
       writeFileSync(
         join(directory, '.git/hooks', name),
-        '#!/bin/sh\nprintf "once\\n" >> hook-count\nsleep 20\n',
+        '#!/bin/sh\nsleep 0.2\nprintf "once\\n" >> hook-count\nsleep 20\n',
         { mode: 0o700 },
       );
       const supervisor = createSupervisor(join(root, 'supervision'));
@@ -233,6 +234,11 @@ test(
         (error: unknown) => ({ error }),
       );
       await hookStarted;
+      // The wrapper announces started before the hook body executes. Wait for
+      // the side effect this recovery test promises to preserve exactly once.
+      for (let attempt = 0; attempt < 200 && !existsSync(join(directory, 'hook-count')); attempt++)
+        await delay(25);
+      assert.equal(existsSync(join(directory, 'hook-count')), true, 'Hook body did not start');
       assert.equal(existsSync(join(directory, '.git/index.lock')), true);
       await child!.stop();
       await outcome;

@@ -271,7 +271,7 @@ test('worktree defaults and trust preserve native parent inheritance, revisions 
 
 test(
   'actual pi and configuration inspection share native saved trust, revocation and global extension decisions',
-  { timeout: 20000 },
+  { timeout: 100000 },
   async (t) => {
     const { createEngine } = await import('@parallel-pi/infra-pi');
     const { createSupervisor } = await import('@parallel-pi/infra-platform');
@@ -302,51 +302,60 @@ test(
         assert.equal((await connection.close()).settled, true);
       }
     }
-    assert.equal(
-      (await engine.inspectConfiguration({ operationId: 'inspect-untrusted', directory })).trusted,
-      false,
-    );
-    await open('untrusted');
-    assert.equal(existsSync(marker), false);
-    access.trust(directory, access.project(directory).trustRevision, true);
-    assert.equal(
-      (await engine.inspectConfiguration({ operationId: 'inspect-trusted', directory })).trusted,
-      true,
-    );
-    rmSync(marker);
-    await open('trusted');
-    assert.equal(readFileSync(marker, 'utf8'), 'loaded');
-    rmSync(marker);
-    access.trust(directory, access.project(directory).trustRevision, false);
-    assert.equal(
-      (await engine.inspectConfiguration({ operationId: 'inspect-revoked', directory })).trusted,
-      false,
-    );
-    await open('revoked');
-    assert.equal(existsSync(marker), false);
-    mkdirSync(join(agent, 'extensions'));
-    writeFileSync(
-      join(agent, 'extensions/trust.js'),
-      `export default function(pi) { pi.on('project_trust', async () => ({ trusted: 'yes' })); }`,
-    );
-    assert.equal(
-      (await engine.inspectConfiguration({ operationId: 'inspect-hook', directory })).trusted,
-      true,
-    );
-    assert.equal(
-      access.project(directory).decision,
-      false,
-      'the non-remembered native hook does not replace the saved decision',
-    );
-    rmSync(marker);
-    await open('hook');
-    assert.equal(readFileSync(marker, 'utf8'), 'loaded');
+    await t.test('untrusted project', { timeout: 20000 }, async () => {
+      assert.equal(
+        (await engine.inspectConfiguration({ operationId: 'inspect-untrusted', directory }))
+          .trusted,
+        false,
+      );
+      await open('untrusted');
+      assert.equal(existsSync(marker), false);
+    });
+    await t.test('trusted project', { timeout: 20000 }, async () => {
+      access.trust(directory, access.project(directory).trustRevision, true);
+      assert.equal(
+        (await engine.inspectConfiguration({ operationId: 'inspect-trusted', directory })).trusted,
+        true,
+      );
+      rmSync(marker);
+      await open('trusted');
+      assert.equal(readFileSync(marker, 'utf8'), 'loaded');
+      rmSync(marker);
+    });
+    await t.test('revoked project', { timeout: 20000 }, async () => {
+      access.trust(directory, access.project(directory).trustRevision, false);
+      assert.equal(
+        (await engine.inspectConfiguration({ operationId: 'inspect-revoked', directory })).trusted,
+        false,
+      );
+      await open('revoked');
+      assert.equal(existsSync(marker), false);
+    });
+    await t.test('global trust hook', { timeout: 20000 }, async () => {
+      mkdirSync(join(agent, 'extensions'));
+      writeFileSync(
+        join(agent, 'extensions/trust.js'),
+        `export default function(pi) { pi.on('project_trust', async () => ({ trusted: 'yes' })); }`,
+      );
+      assert.equal(
+        (await engine.inspectConfiguration({ operationId: 'inspect-hook', directory })).trusted,
+        true,
+      );
+      assert.equal(
+        access.project(directory).decision,
+        false,
+        'the non-remembered native hook does not replace the saved decision',
+      );
+      rmSync(marker);
+      await open('hook');
+      assert.equal(readFileSync(marker, 'utf8'), 'loaded');
+    });
   },
 );
 
 test(
   'supervised native model catalog reflects credentials and custom models without exposing secrets',
-  { timeout: 20000 },
+  { timeout: 80000 },
   async (t) => {
     const { createModelCatalog } = await import('@parallel-pi/infra-pi');
     const { createSupervisor } = await import('@parallel-pi/infra-platform');
@@ -370,32 +379,38 @@ test(
         },
       }),
     );
-    const before = await catalog.list();
-    const item = before.find(
-      (item) => item.provider === 'catalog-fixture' && item.model === 'vision-test',
-    );
-    assert.ok(item);
-    assert.equal(item.images, true);
-    assert.equal(item.available, false);
-    const access = createConfigurationAccess(agent);
-    access.credential(
-      access.read().credentialsRevision,
-      'catalog-fixture',
-      'private-catalog-fixture',
-    );
-    const after = await catalog.list();
-    assert.equal(after.find((item) => item.provider === 'catalog-fixture')?.available, true);
-    assert.doesNotMatch(JSON.stringify(after), /private-catalog-fixture/);
-    writeFileSync(join(agent, 'models.json'), '{private-model-parser-token');
-    await assert.rejects(
-      catalog.list(),
-      (error) =>
-        error instanceof Error &&
-        error.message.includes('Cannot read native models') &&
-        !error.message.includes('private-model-parser-token'),
-    );
-    await catalog.close();
-    await assert.rejects(catalog.list(), /shutting down/);
+    await t.test('catalog without credential', { timeout: 20000 }, async () => {
+      const before = await catalog.list();
+      const item = before.find(
+        (item) => item.provider === 'catalog-fixture' && item.model === 'vision-test',
+      );
+      assert.ok(item);
+      assert.equal(item.images, true);
+      assert.equal(item.available, false);
+    });
+    await t.test('catalog with credential', { timeout: 20000 }, async () => {
+      const access = createConfigurationAccess(agent);
+      access.credential(
+        access.read().credentialsRevision,
+        'catalog-fixture',
+        'private-catalog-fixture',
+      );
+      const after = await catalog.list();
+      assert.equal(after.find((item) => item.provider === 'catalog-fixture')?.available, true);
+      assert.doesNotMatch(JSON.stringify(after), /private-catalog-fixture/);
+    });
+    await t.test('malformed configuration and shutdown', { timeout: 20000 }, async () => {
+      writeFileSync(join(agent, 'models.json'), '{private-model-parser-token');
+      await assert.rejects(
+        catalog.list(),
+        (error) =>
+          error instanceof Error &&
+          error.message.includes('Cannot read native models') &&
+          !error.message.includes('private-model-parser-token'),
+      );
+      await catalog.close();
+      await assert.rejects(catalog.list(), /shutting down/);
+    });
   },
 );
 

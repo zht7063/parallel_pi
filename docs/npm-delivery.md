@@ -55,3 +55,5 @@ npm run test:npm
 脚本把当前已提交版本克隆到普通本地目录再构建，避免依赖 iCloud 工作目录；存在未提交的跟踪文件改动时会停止。产物、隔离源码与日志保存在新的 `~/parallel-pi-candidates/macos.XXXXXX/`，脚本会打印包、校验和、日志和启动命令，不覆盖旧候选、不修改全局 npm 安装。若任何步骤失败即停止，请保留 validation.log。初始 Node/Python 检查失败时直接显示错误，尚未生成日志。不要把 Linux tarball 当作 Mac 包安装。
 
 Darwin 采用临时用户 gui launchd job；输入/输出及进程环境通过私有 Unix socket 转发，凭据不写进 plist。取消时冻结并核验工具状态后终止，以内核资源组计数为清理依据。监督器意外死亡且没有清理证明时保留 recovering；本候选只支持明确的重启机器后恢复，不把 job 消失或 PID 不存在当作工具已清空。
+
+如需快速复验当前四项遗留测试，可运行 `uv run --python 3.11 bash scripts/verify-macos.sh --focus`。此模式仍运行底层探针和平台专项，但仅复验配置/信任、模型目录、原生会话与 fork、Git 中断恢复四项组合测试，并记录各子阶段耗时。它不会运行完整套件或生成 npm 包；通过后必须再运行无参数的完整验收。完整与重点模式均保存独立的 validation.log。
