@@ -53,3 +53,9 @@ Apple XNU 的 `filt_procattach` 对 `NOTE_TRACK | NOTE_TRACKERR | NOTE_CHILD` �
 - 初始候选压缩约 69 MB，未压缩约 226 MB；体积仅供参考，不是发布体积承诺。候选不含 TypeScript 编译器，应用与 worker 不在安装时运行源码 TypeScript。
 
 操作说明见 [npm 安装候选](npm-delivery.md)。macOS 原生监督及对应架构成品尚未验证，因此 N1/N3/N4 整体仍待完成，不宣称跨平台交付已经完成。
+
+### N1a：监督机制调查与独立实机探针
+
+已交付 [macOS 监督调查](darwin-supervision.md) 和 `probes/darwin-supervision.py`。候选路径为临时用户 launchd job 的独立 resource coalition 加内核计数，以及 audit-token 信号的世代校验。探针检查脱离进程组的 double-fork 后代，不将普通进程组或用户态扫描当成完整清理证据。
+
+Linux 上 Python 语法与非 macOS 拒绝路径已验证；macOS 实际 API 可用性、临时 job 隔离、内核计数和信号行为均待实机验证。生产平台限制保持，N1 尚未完成。
