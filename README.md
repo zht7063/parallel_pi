@@ -8,7 +8,7 @@
 
 当前分支 `codex/native-core-npm` 正在把 MVP 整理为“服务核心 + 内置 Web 页面”的 npm 产品。已有 Linux npm 安装候选，支持 `parallel-pi serve` 和 `parallel-pi doctor`；构建与安装步骤见 [npm 安装候选](docs/npm-delivery.md)。尚未发布 npm registry。
 
-**macOS 原生支持尚未完成。** 最终方案不要求用户使用 Lima；平台监督机制及实机验证进展见 [本轮里程碑](docs/native-core-npm.md) 和 [macOS 监督探针](docs/darwin-supervision.md)。下面的 MVP/Linux 使用说明仍有效，历史 Lima 文档不代表本轮的最终 Mac 安装方案。
+**macOS 原生支持尚未完成。** 最终方案不要求用户使用 Lima；底层探针已在 macOS 26.6.2 arm64 通过，正式适配候选可用 `uv run --python 3.11 bash scripts/verify-macos.sh` 构建并验收（先准备 Node 26.8.2）；平台监督机制及实机验证进展见 [本轮里程碑](docs/native-core-npm.md) 和 [macOS 监督探针](docs/darwin-supervision.md)。下面的 MVP/Linux 使用说明仍有效，历史 Lima 文档不代表本轮的最终 Mac 安装方案。
 
 ## 主要能力
 

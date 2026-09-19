@@ -48,6 +48,10 @@ test(
     assert.ok(names.includes('apps/server/src/index.js'));
     assert.ok(names.includes('packages/infra-git/src/commit-worker.js'));
     assert.ok(names.includes('packages/infra-platform/src/supervisor.py'));
+    assert.ok(names.includes('packages/infra-platform/src/darwin-supervisor.py'));
+    assert.deepEqual(JSON.parse(readFileSync(join(output, 'package.json'), 'utf8')).os, [
+      process.platform,
+    ]);
     assert.ok(names.includes('node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js'));
     assert.equal(
       names.some((name) => /(^|\/)(\.git|\.env|__pycache__)(\/|$)/.test(name)),

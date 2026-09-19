@@ -1,6 +1,6 @@
 # macOS 进程监督：候选机制与实机探针
 
-状态：机制调查与探针已交付，尚未在 macOS 执行，生产适配器没有启用。本文件不构成 macOS 支持声明。
+状态：修正后的探针已由用户在 macOS 26.6.2 arm64 / Python 3.11.14 实测通过，生产适配候选已接入，尚未完成实机验收。本文件不构成 macOS 支持声明。
 
 ## 必须保留的行为
 
@@ -34,16 +34,22 @@ python3 probes/darwin-supervision.py
 
 1. 当前用户能读取 coalition 与进程世代信息。
 2. launchd 分配了不同于调用者、最初仅含监督器的资源组。
-3. 错误世代的 signal 0 被内核以 ESRCH 拒绝，正确世代可访问。
+3. 错误世代的 SIGCONT 被内核以 ESRCH 拒绝，正确世代可以接收 SIGCONT。
 4. 脱离进程组并 double-fork 后仍属于该资源组。
 5. 杀死该测试后代后，内核计数回到只剩监督器。
 
-通过后输出系统/Python 版本及各项结果，同时明确 `productionAdapterVerified: false`。本轮 Linux 仅验证了 Python 语法与非 macOS 拒绝路径，未执行上述 Darwin 检查。
+通过后输出系统/Python 版本及各项结果，同时明确 `productionAdapterVerified: false`。初版只在 Linux 验证语法与非 macOS 拒绝路径；修正后的用户 Mac 实测结果见下节。
 
 ## 通过探针后仍需完成
 
 - 确认 fork/exec/posix_spawn 继承和计数的生命周期语义，尤其 zombie/corpse 和内核计数更新时间。
-- 设计 launchd job 与核心的 stdin/stdout/stderr 桥接、环境传递及启动登记事务，避免将凭据写入 launchd plist。
+- 验证已实现的 launchd job 与核心 stdin/stdout/stderr 桥接、环境传递及启动登记事务；候选通过私有 socket 传递环境，不把凭据写入 launchd plist。
 - 校验正常完成、取消、执行期间后端 SIGKILL、监督器 SIGKILL、重启、睡眠唤醒及 PID 世代变化。
 - 工作区解锁以明确内核证据为准；临时 job 不存在、读取失败或超时都不能直接推导任务安全结束。
 - 验证不依赖管理员权限及额外系统授权；如失败，再调整候选机制，不能用生产代码掩盖未解决的平台限制。
+
+## 2026-09-19 用户实机结果
+
+用户在 macOS 26.6.2（25G83）、arm64、Python 3.11.14 上提供了终端截图：exclusiveCoalition、doubleForkRetainsCoalition、kernelGenerationRejection 均为 true，kernelCountAfterCleanup 为 1，productionAdapterVerified 为 false。证据来源为本任务用户回传，不是 Linux 本机执行结果。
+
+原探针的 user/501 bootstrap 返回错误 5；移出 iCloud 目录未解决。改为 gui/501 后通过加载及独占资源组检查。随后信号 0 返回 EINVAL；Apple 的 psignal_by_audit_token 要求 0 < signum < NSIG，改为 SIGCONT 后全部探针检查通过。当前探针明确针对桌面登录会话，不声明 SSH-only/headless 支持。未重新验证 iCloud 路径，不把路径认定为根因。

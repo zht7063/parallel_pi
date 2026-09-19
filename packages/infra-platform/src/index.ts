@@ -6,13 +6,16 @@ import { fileURLToPath } from 'node:url';
 import type { ProcessSupervisor, ProcessSpec, ReapEvidence } from '@parallel-pi/application';
 
 const execute = promisify(execFile);
-const helper = fileURLToPath(new URL('./supervisor.py', import.meta.url));
+const helper = fileURLToPath(
+  new URL(
+    process.platform === 'darwin' ? './darwin-supervisor.py' : './supervisor.py',
+    import.meta.url,
+  ),
+);
 
 export function createSupervisor(root: string): ProcessSupervisor {
-  if (process.platform !== 'linux')
-    throw new Error(
-      'Process supervision currently requires Linux; the macOS adapter is not implemented',
-    );
+  if (!['linux', 'darwin'].includes(process.platform))
+    throw new Error('Process supervision requires Linux or macOS with a desktop login session');
   mkdirSync(root, { recursive: true, mode: 0o700 });
   function directory(id: string) {
     if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) throw new Error('Invalid supervision ID');

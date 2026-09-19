@@ -107,7 +107,7 @@ def probe():
     lib = bindings()
     own = information(lib, os.getpid())
     label = 'org.parallel-pi.probe.' + uuid.uuid4().hex
-    domain = f'user/{os.getuid()}'
+    domain = f'gui/{os.getuid()}'
     cache = Path(__file__).resolve().parent / '.cache' / 'darwin-supervision'
     cache.mkdir(parents=True, exist_ok=True, mode=0o700)
     with tempfile.TemporaryDirectory(prefix='run-', dir=cache) as temporary:
@@ -132,9 +132,9 @@ def probe():
             coalition = supervisor['coalition']
             if not coalition or coalition == own['coalition'] or active(lib, coalition) != 1:
                 raise RuntimeError('launchd did not provide an exclusive resource coalition')
-            send(lib, supervisor, 0)
+            send(lib, supervisor, signal.SIGCONT)
             try:
-                send(lib, supervisor, 0, wrong_generation=True)
+                send(lib, supervisor, signal.SIGCONT, wrong_generation=True)
             except OSError as error:
                 if error.errno != errno.ESRCH:
                     raise

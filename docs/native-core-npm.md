@@ -75,3 +75,11 @@ Linux 上 Python 语法与非 macOS 拒绝路径已验证；macOS 实际 API 可
 根 README 和文档索引现在明确区分已完成的 Linux MVP/npm 候选与未完成的原生 Mac 支持，链接当前里程碑和探针。安装包 README 改为直接附带 npm 交付说明，避免只提供依赖未随包发布的源码文档链接的 README。该变更仅替换文档复制来源；构建脚本语法、格式及 diff 检查通过。
 
 剩余主要门槛：Mac 实机执行独立监督探针并确定可用机制，完成生产 macOS 适配与对应原生依赖构建，再在 Mac 验证启动/取消/崩溃恢复/升级/安装。当前会话为 Linux，尚未获得可用 Mac 或探针结果，因此不能宣布 N1–N5 跨平台目标完成。
+
+### N1b：用户 Mac 探针通过与正式适配候选
+
+2026-09-19 用户截图确认 macOS 26.6.2 arm64 / Python 3.11.14 探针通过。修复 gui 加载域与 SIGCONT 参数，细节见 darwin-supervision.md。原生适配候选已接入平台选择、CLI 预检和目标平台 npm 清单；使用临时 launchd job、私有 socket 环境/IO 桥接、持久 owner/guard/cancel 与内核 coalition 清理证明。独立监督器失联没有证明时继续 recovering，重启机器后可核验旧 boot 已结束。
+
+新增跨平台清理决策检查及 Mac 专属实际监督器死亡、等待 shell 取消场景；Linux 结果不代替 Mac。`scripts/verify-macos.sh` 准备匹配架构候选和日志，执行源码与安装后平台测试。N1/N3/N4/N5 仍未整体关闭：正式适配、原生依赖包、完整安装应用路径和睡眠唤醒必须等待 Mac 实测，当前环境只能制作 Linux tarball。
+
+本候选 Linux 验证结果：`npm run check` 70 项通过、2 项 Darwin 专属用例跳过，架构/类型/格式通过；新增 Python 清理决策检查 6 项通过（由平台测试调用，不是额外的 Mac 实测）。最终类型、格式、Python/shell 语法及 diff 检查通过。Vite 构建通过；完整 12 项浏览器测试通过（约 3.3 分钟）；`npm run test:npm` 在候选目录上通过（约 209 秒），包括新增 Darwin 资源入包与目标 OS 元数据断言。Linux 候选位于 `/tmp/parallel-pi-darwin-linux-candidate`，是开发回归产物，不可用于 Mac。日志在本机 `/tmp/parallel-pi-darwin-{check,npm-test,browser}.log`。没有把 Mac 专属跳过计为通过，也没有关闭跨平台交付门槛。

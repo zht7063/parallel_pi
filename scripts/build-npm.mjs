@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const destination = resolve(process.argv[2] ?? 'dist/npm');
+if (!['linux', 'darwin'].includes(process.platform)) throw new Error('Unsupported build platform');
 if (existsSync(destination)) throw new Error('Output directory must not exist');
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
 const manifest = readJson(join(root, 'package.json'));
@@ -192,7 +193,7 @@ writeFileSync(
       type: 'module',
       bin: manifest.bin,
       engines: manifest.engines,
-      os: ['linux'],
+      os: [process.platform],
       cpu: [process.arch],
       files: ['apps', 'packages', 'scripts', 'build-info.json'],
       dependencies,

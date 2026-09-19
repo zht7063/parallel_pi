@@ -7,8 +7,8 @@ import { join, resolve } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const json = (path) => JSON.parse(readFileSync(join(root, path), 'utf8'));
 export function checkRuntime() {
-  if (process.platform !== 'linux')
-    throw new Error('Run the backend inside Linux (on macOS use Lima)');
+  if (!['linux', 'darwin'].includes(process.platform))
+    throw new Error('The backend requires Linux or macOS');
   const required = json('package.json').engines.node;
   if (process.versions.node !== required) throw new Error(`Node.js ${required} is required`);
   const git = execFileSync('git', ['--version'], { encoding: 'utf8' }).trim();
@@ -22,8 +22,16 @@ export function checkRuntime() {
       `
 import ctypes, os, sqlite3, sys
 if sys.version_info < (3, 11): raise RuntimeError('Python 3.11 or newer is required')
-if ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) != 0: raise RuntimeError('Linux subreaper unavailable')
-os.close(os.pidfd_open(os.getpid()))
+if sys.platform == 'linux':
+    if ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) != 0: raise RuntimeError('Linux subreaper unavailable')
+    os.close(os.pidfd_open(os.getpid()))
+else:
+    import subprocess
+    lib = ctypes.CDLL('/usr/lib/libSystem.B.dylib')
+    for symbol in ('proc_pidinfo', 'proc_listpids', 'coalition_info_resource_usage', '__proc_info'):
+        getattr(lib, symbol)
+    subprocess.run(['/bin/launchctl', 'print', f'gui/{os.getuid()}'], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(['/usr/sbin/sysctl', '-n', 'kern.bootsessionuuid'], check=True, stdout=subprocess.DEVNULL)
 `,
     ],
     { stdio: ['ignore', 'pipe', 'pipe'] },
@@ -50,7 +58,7 @@ os.close(os.pidfd_open(os.getpid()))
       manifest.arch !== process.arch
     )
       throw new Error(
-        'Runtime bundle platform/architecture mismatch; build inside the target Linux environment',
+        'Runtime bundle platform/architecture mismatch; build inside the target platform environment',
       );
     for (const [path, expected] of Object.entries(manifest.files)) {
       const file = join(root, path);
@@ -63,7 +71,9 @@ os.close(os.pidfd_open(os.getpid()))
     }
     build = `${manifest.applicationCommit}${manifest.development ? ' (development)' : ''}`;
   }
-  console.log(`Runtime ready: Linux/${process.arch}, Node ${required}, ${git}, build ${build}`);
+  console.log(
+    `Runtime ready: ${process.platform}/${process.arch}, Node ${required}, ${git}, build ${build}`,
+  );
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
