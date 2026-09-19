@@ -24,6 +24,14 @@ parallel-pi serve --port 4317 --data-dir /absolute/private/data --agent-dir /abs
 
 服务仅监听 `127.0.0.1`，前端管理服务所在机器的资源。Ctrl+C 停止，等待工具退出。保留现有 `PARALLEL_PI_*` 环境变量及默认数据路径；CLI 选项优先于环境变量。
 
+## 临时文件与测试清理
+
+服务启动时统一将 `TMPDIR`、`TMP`、`TEMP` 设置为 `<data-dir>/tmp`（目录权限 0700），在加载业务依赖之前生效。模型配置校验、Git 预览以及遵循这些变量的 Pi、Python 和工具子进程都使用此目录；原有操作结束自动清理逻辑保留。异常退出残留可在服务和子进程完全停止后清理 `tmp/`，不要删除用于恢复的 `supervision/`、`git-transactions/` 或会话、工作区数据。
+
+测试时将 `--data-dir` 和 `--agent-dir` 指向同一个专用测试根目录下的 `data/`、`agent/`，项目也选用该根目录中的测试仓库，即可集中保留和清理测试数据。不要把真实项目作为可删除的测试目录。Mac 探针另使用仓库 `probes/.cache/darwin-supervision/`。
+
+这不是文件系统沙箱：外部工具硬编码的路径、独立的 npm 缓存、浏览器存储和操作系统日志不受这些变量控制。源码测试仍遵循测试进程的系统临时目录设置；需要集中存放时，可先创建仓库 `.parallel-pi/tmp`，再用 `TMPDIR="$PWD/.parallel-pi/tmp" TMP="$PWD/.parallel-pi/tmp" TEMP="$PWD/.parallel-pi/tmp" npm test`。
+
 ## 构建内容
 
 应用 TypeScript 与 worker 预编译为 JavaScript，内部包引用转换为包内路径。Web 静态资源、Python 监督器及备份脚本随包提供；固定 pi、MWF、MCP adapter 的生产依赖随包捆绑，安装不执行依赖构建脚本。第三方许可证随各依赖保留。构建文件清单排除应用未跟踪文件、Git 元数据和 Python 缓存。

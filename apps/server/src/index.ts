@@ -1,6 +1,6 @@
+import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { createBackend } from './bootstrap.ts';
 
 process.umask(0o077);
 const port = Number(process.env.PARALLEL_PI_PORT ?? 4317);
@@ -10,6 +10,11 @@ const dataDirectory = resolve(
   process.env.PARALLEL_PI_DATA_DIR ??
     join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'parallel_pi'),
 );
+// Configure before loading dependencies so cached paths and child processes agree.
+const temporaryDirectory = join(dataDirectory, 'tmp');
+mkdirSync(temporaryDirectory, { recursive: true, mode: 0o700 });
+for (const name of ['TMPDIR', 'TMP', 'TEMP']) process.env[name] = temporaryDirectory;
+const { createBackend } = await import('./bootstrap.ts');
 const backend = await createBackend({
   dataDirectory,
   agentDirectory: process.env.PARALLEL_PI_AGENT_DIR,

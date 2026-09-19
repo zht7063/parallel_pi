@@ -108,12 +108,17 @@ def probe():
     own = information(lib, os.getpid())
     label = 'org.parallel-pi.probe.' + uuid.uuid4().hex
     domain = f'user/{os.getuid()}'
-    with tempfile.TemporaryDirectory(prefix='parallel-darwin-probe-') as temporary:
+    cache = Path(__file__).resolve().parent / '.cache' / 'darwin-supervision'
+    cache.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with tempfile.TemporaryDirectory(prefix='run-', dir=cache) as temporary:
         directory = Path(temporary)
+        for name in ('TMPDIR', 'TMP', 'TEMP'):
+            os.environ[name] = temporary
         spec = directory / 'job.plist'
         spec.write_bytes(plistlib.dumps({
             'Label': label,
             'ProgramArguments': [sys.executable, str(Path(__file__).resolve()), '--worker', temporary],
+            'EnvironmentVariables': {name: temporary for name in ('TMPDIR', 'TMP', 'TEMP')},
             'RunAtLoad': True,
             'KeepAlive': False,
             'ProcessType': 'Background',

@@ -28,7 +28,7 @@ PID 信号路径另验证 `PROC_INFO_CALL_SIGNAL_AUDITTOKEN`。Apple 的 [proc_i
 python3 probes/darwin-supervision.py
 ```
 
-脚本创建一个临时用户 launchd job，以及一个有超时上限的 detached double-fork 测试进程；只写临时目录，不需要 sudo、不安装常驻服务、不操作用户项目。结束时移除临时 job。失败以非零状态退出，不会改用较弱方式报告成功。
+脚本创建一个临时用户 launchd job，以及一个有超时上限的 detached double-fork 测试进程；临时文件集中在仓库 `probes/.cache/darwin-supervision/run-*`，正常结束自动清理，异常残留也在此处；不需要 sudo、不安装常驻服务、不操作用户项目。结束时移除临时 job。失败以非零状态退出，不会改用较弱方式报告成功。
 
 检查项目：
 

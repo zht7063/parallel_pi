@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,9 +36,39 @@ test(
   { timeout: 30000 },
   async (t) => {
     const root = mkdtempSync(join(tmpdir(), 'parallel-cli-'));
+    // Observe the real entrypoint and an inherited child, without platform-specific /proc.
+    const observer = join(root, 'observe.mjs');
+    writeFileSync(
+      observer,
+      `
+      import { writeFileSync } from 'node:fs';
+      import { tmpdir } from 'node:os';
+      import { spawnSync } from 'node:child_process';
+      process.on('exit', () => {
+        const child = spawnSync(process.execPath,
+          ['--input-type=module', '-e', 'import { tmpdir } from "node:os"; console.log(tmpdir())'],
+          { encoding: 'utf8' });
+        writeFileSync('temporary-paths.json', JSON.stringify({
+          own: tmpdir(), child: child.stdout.trim(), status: child.status,
+          variables: [process.env.TMPDIR, process.env.TMP, process.env.TEMP],
+        }));
+      });
+    `,
+    );
     const child = spawn(
       process.execPath,
-      [cli, 'serve', '--port', '0', '--data-dir', 'data', '--agent-dir', 'agent'],
+      [
+        '--import',
+        observer,
+        cli,
+        'serve',
+        '--port',
+        '0',
+        '--data-dir',
+        'data',
+        '--agent-dir',
+        'agent',
+      ],
       {
         cwd: root,
         env: { ...process.env, PARALLEL_PI_PORT: 'invalid-overridden-by-cli' },
@@ -73,11 +103,21 @@ test(
     const status = await fetch(`${base}/api/status`, { headers: { cookie } });
     assert.equal(status.status, 200);
     assert.equal((await status.json()).service, 'parallel_pi');
+    const connections = await fetch(`${base}/api/connections`, { headers: { cookie } });
+    assert.equal(connections.status, 200);
+    assert.deepEqual(readdirSync(join(root, 'data', 'tmp')), []);
     child.kill('SIGTERM');
     const [code, signal] = await exited;
     assert.equal(code, 0, stderr);
     assert.equal(signal, null);
     assert.ok(existsSync(join(root, 'data')));
+    const temporary = join(root, 'data', 'tmp');
+    assert.deepEqual(JSON.parse(readFileSync(join(root, 'temporary-paths.json'), 'utf8')), {
+      own: temporary,
+      child: temporary,
+      status: 0,
+      variables: [temporary, temporary, temporary],
+    });
     const doctor = spawnSync(process.execPath, [cli, 'doctor'], { cwd: root, encoding: 'utf8' });
     assert.equal(doctor.status, 0, doctor.stderr);
     assert.match(doctor.stdout, /Runtime ready/);
