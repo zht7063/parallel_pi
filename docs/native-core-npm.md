@@ -59,3 +59,13 @@ Apple XNU 的 `filt_procattach` 对 `NOTE_TRACK | NOTE_TRACKERR | NOTE_CHILD` �
 已交付 [macOS 监督调查](darwin-supervision.md) 和 `probes/darwin-supervision.py`。候选路径为临时用户 launchd job 的独立 resource coalition 加内核计数，以及 audit-token 信号的世代校验。探针检查脱离进程组的 double-fork 后代，不将普通进程组或用户态扫描当成完整清理证据。
 
 Linux 上 Python 语法与非 macOS 拒绝路径已验证；macOS 实际 API 可用性、临时 job 隔离、内核计数和信号行为均待实机验证。生产平台限制保持，N1 尚未完成。
+
+### N4a 已完成：真实 MVP 数据升级与 Linux 浏览器回归
+
+专项安装测试改为从固定 MVP `ea812ac` 的归档应用生成真实会话、运行和知识正文。旧应用使用该 MVP 同版本的固定 pi/MWF；业务模块从旧归档自身的 workspace 解析，不使用当前分支业务模块。关闭并移除旧应用目录后，npm 安装版打开相同数据，保留原会话/运行 ID 并继续发送；旧知识正文和未提交工作文件保留。
+
+最终 `npm run test:npm` 通过，约 203 秒：独立空 npm 缓存离线安装、发布清单、MVP 升级、原会话继续、旧知识正文读取、编译后的 Git inspect/preview/commit worker、真实 pre-commit 钩子、MWF 读取、包内备份、重新安装后两次运行不重放，以及卸载保留数据/配置/未提交文件。测试只操作临时仓库与临时用户数据。
+
+`npm run build` 通过，12 项浏览器测试全部通过（约 3.4 分钟）。首次浏览器启动失败原因是精简环境缺少 libatk 等系统库，随后按 development.md 复用已有 FONTCONFIG_FILE/LD_LIBRARY_PATH 配置完成回归；未修改 UI 或浏览器测试来绕过失败。
+
+兼容声明仅覆盖上述固定 MVP 与当前候选，未覆盖任意历史版本、其他原生版本或 macOS。N4 的 Linux 部分已有直接证据，跨平台验收仍待 N1 实现及 Mac 实机环境。

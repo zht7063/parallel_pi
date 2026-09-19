@@ -36,6 +36,6 @@ parallel-pi serve --port 4317 --data-dir /absolute/private/data --agent-dir /abs
 npm run test:npm
 ```
 
-专项测试在源码之外构建和离线安装 tarball，检查发布清单，启动 Web/API，操作真实 Git、pi 和 MWF，执行包内备份并验证重新安装/卸载保留用户数据。测试使用确定性模型，不调用付费模型。
+专项测试在源码之外构建，并使用独立空 npm 缓存离线安装 tarball。测试从固定 MVP 提交 `ea812ac` 的真实应用生成会话和记忆，移除旧应用目录后，用 npm 版打开同一数据并继续原会话；同时检查未提交文件、记忆正文、Git 提交 worker/钩子、包内备份，以及重新安装/卸载后的数据保留。原生 pi/MWF 版本沿用该 MVP 的固定版本；测试使用确定性模型，不调用付费模型。
 
-升级前停止服务并备份，之后安装新的候选版本。`npm uninstall --global parallel-pi` 只移除程序；数据、凭据和项目由用户独立管理。重新安装同版本验证不等于已经证明所有旧版本升级兼容性，旧 MVP 数据及跨版本升级仍属于 N4 验收门槛。
+升级前停止服务并备份，之后安装新的候选版本。`npm uninstall --global parallel-pi` 只移除程序；数据、凭据和项目由用户独立管理。升级验证范围是固定 MVP `ea812ac` → 当前 npm 候选，以及候选同版本重新安装；不泛化为所有旧版本。macOS 平台兼容性仍属于未完成的验收门槛。
