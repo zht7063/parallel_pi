@@ -1,6 +1,6 @@
 # parallel_pi MVP 设计与讨论
 
-M1 应用骨架、M2 执行恢复及 M3 地图与会话已完成，当前进度以 [实施里程碑](milestones.md) 为准，应用运行见 [本地开发与验证](development.md)，阶段证据见 [M2](evidence/m2-execution.md) 与 [M3](evidence/m3-map-sessions.md)。[实施交接](implementation-handoff.md) 和 [V01–V04 验证记录](validation.md) 保留设计到实施的依据；探针不替代应用验收。规格区分用户已确认约束 C、建议默认值 D、技术验证项 V；完整 MVP 仍待 M4/M5。
+Linux MVP 已完成，证据见 [MVP 完成报告](evidence/mvp-completion.md)。当前 `codex/native-core-npm` 分支的原生服务与 npm 改造见 [本轮里程碑](native-core-npm.md)、[npm 安装候选](npm-delivery.md) 和 [macOS 监督调查](darwin-supervision.md)。macOS 原生支持尚未完成，不能将 Linux 验证视为跨平台验收。历史设计文档保留当时的阶段与决策背景，当前运行步骤以根目录 README 和上述交付文档为准。
 
 - [已确认技术架构](./architecture.md)：五层职责、模块与进程、内核适配、数据归属、执行恢复及升级策略；前端采用 Vue 3，执行恢复和地图已落地，配置与成果交付待后续阶段。
 - [交互式项目结构图](./visualization/project-structure.html) 与 [结构说明](./visualization/README.md)：运行链路、目录映射与数据边界。

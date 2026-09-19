@@ -180,7 +180,7 @@ for (const name of ['cli.mjs', 'runtime.mjs', 'backup.py']) {
   );
 }
 cpSync(join(root, 'apps/web/dist'), join(destination, 'apps/web/dist'), { recursive: true });
-cpSync(join(root, 'README.md'), join(destination, 'README.md'));
+cpSync(join(root, 'docs/npm-delivery.md'), join(destination, 'README.md'));
 writeFileSync(
   join(destination, 'package.json'),
   JSON.stringify(
