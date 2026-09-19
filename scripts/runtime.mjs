@@ -36,6 +36,12 @@ os.close(os.pidfd_open(os.getpid()))
   ])
     if (!existsSync(join(root, path))) throw new Error(`Missing build dependency: ${path}`);
   let build = 'source checkout';
+  if (existsSync(join(root, 'build-info.json'))) {
+    const info = json('build-info.json');
+    if (info.format !== 1 || info.platform !== process.platform || info.arch !== process.arch)
+      throw new Error('Installed package platform/architecture mismatch');
+    build = `${info.applicationCommit}${info.development ? ' (development)' : ''}`;
+  }
   if (existsSync(join(root, 'runtime-manifest.json'))) {
     const manifest = json('runtime-manifest.json');
     if (

@@ -20,7 +20,9 @@
     "format": "prettier --write apps packages scripts tests playwright.config.ts",
     "format:check": "prettier --check apps packages scripts tests playwright.config.ts",
     "test:browser": "playwright test",
-    "test:package": "node --test tests/runtime-package.mjs"
+    "test:package": "node --test tests/runtime-package.mjs",
+    "build:npm": "npm run build && node scripts/build-npm.mjs",
+    "test:npm": "node --test tests/npm-package.mjs"
   },
   "engines": {
     "node": "26.8.2"

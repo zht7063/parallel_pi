@@ -151,11 +151,17 @@ def backup(args):
                 'agentDirectoryExists': agent.exists(),
                 'roots': [str(root) for root in roots],
                 'databaseSchema': schema,
-                'versions': json.loads((ROOT / 'probes/versions.json').read_text()),
+                'versions': (json.loads((ROOT / 'build-info.json').read_text())['versions']
+                             if (ROOT / 'build-info.json').exists()
+                             else json.loads((ROOT / 'probes/versions.json').read_text())),
                 'applicationCommit': (json.loads((ROOT / 'runtime-manifest.json').read_text())['applicationCommit']
                                       if (ROOT / 'runtime-manifest.json').exists()
+                                      else json.loads((ROOT / 'build-info.json').read_text())['applicationCommit']
+                                      if (ROOT / 'build-info.json').exists()
                                       else subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()),
-                'dependencyLockSha256': digest(ROOT / 'package-lock.json'),
+                'dependencyLockSha256': (json.loads((ROOT / 'build-info.json').read_text())['dependencyLockSha256']
+                                         if (ROOT / 'build-info.json').exists()
+                                         else digest(ROOT / 'package-lock.json')),
                 'entries': entries, 'requiredFiles': [str(path).lstrip('/') for path in required],
                 'sha256': digest(archive),
             }

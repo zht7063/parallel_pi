@@ -40,3 +40,16 @@ Apple XNU 的 `filt_procattach` 对 `NOTE_TRACK | NOTE_TRACKERR | NOTE_CHILD` �
 新增 `parallel-pi serve`、`doctor`、`--help` 和 `--version`，支持端口、数据目录及 agent 目录，复用现有运行预检。保留 `npm start` 与旧环境变量，默认仅 loopback。信号关闭增加重复调用保护。
 
 验证：`node --test tests/cli.test.mjs` 两项通过，实际从源码外目录启动，访问 Web 与带 session 的状态 API，SIGTERM 正常退出且数据保留；错误参数在启动前拒绝。类型和架构检查通过。当前 bin 仍为源码运行入口，npm 安装后的编译入口由 N3 完成；N2 整体仍待平台支持与后续集成验收。
+
+### N3a 已完成：Linux npm 成品与源码外安装验收
+
+新增 `npm run build:npm` 和 `npm run test:npm`。构建预编译应用与 worker，保留相对资源布局，固定生产依赖随包捆绑；原生依赖遵循自身 npm 文件清单，应用源文件限定为 Git 跟踪清单，安装无需执行构建脚本。候选按构建平台/架构标记，`private: true` 防止误发布 registry。包内预检及备份读取独立发布元数据，不依赖源码 Git 和锁文件位置。
+
+验证证据：
+
+- 最终依赖布局从零构建的 `npm run test:npm` 通过，约 218 秒。真实 tarball 在源码外离线全局安装，从生成的命令入口启动，Web/本机会话保护、Git 项目登记、MWF 初始化和真实 pi 受控模型运行通过。
+- 包内备份命令成功，版本与构建元数据一致；重新安装同版本及卸载保留独立数据、agent 设置和项目文件。此项不代替旧 MVP 数据跨版本升级验收。
+- `npm run check` 通过：69 项 Node 测试、架构、类型及格式检查。最后补充开发候选标记后的 CLI 专项 2 项再次通过。
+- 初始候选压缩约 69 MB，未压缩约 226 MB；体积仅供参考，不是发布体积承诺。候选不含 TypeScript 编译器，应用与 worker 不在安装时运行源码 TypeScript。
+
+操作说明见 [npm 安装候选](npm-delivery.md)。macOS 原生监督及对应架构成品尚未验证，因此 N1/N3/N4 整体仍待完成，不宣称跨平台交付已经完成。
