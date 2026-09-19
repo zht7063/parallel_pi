@@ -2,13 +2,11 @@ import { readFileSync, existsSync, lstatSync, readlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const json = (path) => JSON.parse(readFileSync(join(root, path), 'utf8'));
-try {
-  if (process.argv.length > 3 || (process.argv[2] && process.argv[2] !== '--check'))
-    throw new Error('Usage: node scripts/runtime.mjs [--check]');
+export function checkRuntime() {
   if (process.platform !== 'linux')
     throw new Error('Run the backend inside Linux (on macOS use Lima)');
   const required = json('package.json').engines.node;
@@ -60,8 +58,16 @@ os.close(os.pidfd_open(os.getpid()))
     build = `${manifest.applicationCommit}${manifest.development ? ' (development)' : ''}`;
   }
   console.log(`Runtime ready: Linux/${process.arch}, Node ${required}, ${git}, build ${build}`);
-  if (!process.argv[2]) await import('../apps/server/src/index.ts');
-} catch (error) {
-  console.error(`Startup refused: ${error.message}`);
-  process.exitCode = 1;
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    if (process.argv.length > 3 || (process.argv[2] && process.argv[2] !== '--check'))
+      throw new Error('Usage: node scripts/runtime.mjs [--check]');
+    checkRuntime();
+    if (!process.argv[2]) await import('../apps/server/src/index.ts');
+  } catch (error) {
+    console.error(`Startup refused: ${error.message}`);
+    process.exitCode = 1;
+  }
 }

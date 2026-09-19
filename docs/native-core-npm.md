@@ -30,3 +30,13 @@
 ### N0
 
 已核对当前分支和干净工作区，确认现有运行入口强制 Linux，监督器依赖 /proc、pidfd 与 subreaper，后端直接运行 TypeScript。上述限制分别归入 N1 与 N3。
+
+### N1 调查：macOS 不能套用 FreeBSD 子进程跟踪
+
+Apple XNU 的 `filt_procattach` 对 `NOTE_TRACK | NOTE_TRACKERR | NOTE_CHILD` 返回 `ENOTSUP`，单纯 kqueue 监听不能提供自动追踪所有后代的保证。来源：[Apple XNU kern_event.c](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_event.c)。因此不以 kqueue/轮询方案冒充 Linux subreaper 的等价实现。原生 macOS 监督仍在调查，Linux 平台保护尚未解除。
+
+### N2a 已完成：独立 CLI 入口（Linux 已验证）
+
+新增 `parallel-pi serve`、`doctor`、`--help` 和 `--version`，支持端口、数据目录及 agent 目录，复用现有运行预检。保留 `npm start` 与旧环境变量，默认仅 loopback。信号关闭增加重复调用保护。
+
+验证：`node --test tests/cli.test.mjs` 两项通过，实际从源码外目录启动，访问 Web 与带 session 的状态 API，SIGTERM 正常退出且数据保留；错误参数在启动前拒绝。类型和架构检查通过。当前 bin 仍为源码运行入口，npm 安装后的编译入口由 N3 完成；N2 整体仍待平台支持与后续集成验收。

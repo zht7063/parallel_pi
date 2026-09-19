@@ -24,7 +24,10 @@ backend.server.on('error', async (error) => {
   process.exitCode = 1;
   await backend.close();
 });
+let closing = false;
 for (const signal of ['SIGINT', 'SIGTERM'] as const)
   process.once(signal, () => {
+    if (closing) return;
+    closing = true;
     void backend.close();
   });

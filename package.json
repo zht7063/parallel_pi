@@ -38,5 +38,9 @@
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "version": "0.2.0-dev.0",
+  "bin": {
+    "parallel-pi": "scripts/cli.mjs"
+  }
 }
